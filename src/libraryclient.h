@@ -1,5 +1,7 @@
 #pragma once
 
+#include "settings.h"
+
 #include <QDateTime>
 #include <QImage>
 #include <QList>
@@ -7,8 +9,6 @@
 
 #include <functional>
 #include <memory>
-
-struct LibrarySettings;
 
 struct LibraryItem {
     QString id;
@@ -26,7 +26,7 @@ public:
     using ListCallback = std::function<void(QList<LibraryItem>, QString nextCursor, QString error)>;
     using ImageCallback = std::function<void(QImage, QString error)>;
 
-    explicit LibraryClient(const LibrarySettings &settings, QObject *parent = nullptr);
+    explicit LibraryClient(const LibrarySettings &settings, const QString &settingsDirectory = defaultSettingsDirectory());
     ~LibraryClient() override;
 
     bool isConfigured() const;

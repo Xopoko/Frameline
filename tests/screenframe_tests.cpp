@@ -7,6 +7,7 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -385,6 +386,52 @@ bool standaloneLibrary()
     return check(requested, "Set up library must open the app's settings flow.");
 }
 
+bool libraryRejectsStaleSettings()
+{
+    const QTemporaryDir directory;
+    if (!check(directory.isValid(), "A private fixture directory is required for Library privacy tests.")) {
+        return false;
+    }
+
+    AppSettings initial;
+    initial.library = validLibrary();
+    if (!check(saveSettings(initial, directory.path()), "Could not save the initial Library fixture.")) {
+        return false;
+    }
+    LibraryClient existing(initial.library, directory.path());
+    QImage image(16, 12, QImage::Format_RGB32);
+    image.fill(Qt::blue);
+    const QDateTime capturedAt = QDateTime::fromMSecsSinceEpoch(1'700'000'000'000, Qt::UTC);
+    const auto queue = QDir(libraryQueueDirectory(initial.library, directory.path()));
+    const auto entries = [&queue] { return queue.entryList(QDir::Dirs | QDir::NoDotAndDotDot); };
+    const auto enqueue = [&] {
+        existing.enqueue(image, QStringLiteral("full"), capturedAt);
+        return existing.flushPendingWrites();
+    };
+
+    bool passed = check(enqueue() && entries().size() == 1,
+                        "An active Library may queue a capture when its settings still match.");
+    const QStringList originalEntries = entries();
+
+    auto paused = initial;
+    paused.library.autoArchive = false;
+    if (!check(saveSettings(paused, directory.path()), "Could not pause archiving in the Library fixture.")) {
+        return false;
+    }
+    passed &= check(enqueue() && entries() == originalEntries,
+                    "An older Library instance must honor the persisted archive opt-out.");
+
+    auto other = initial;
+    other.library.sshHost = QStringLiteral("another-library");
+    if (!check(saveSettings(other, directory.path()), "Could not replace the Library destination fixture.")) {
+        return false;
+    }
+    passed &= check(enqueue() && entries() == originalEntries
+                        && !QDir(libraryQueueDirectory(other.library, directory.path())).exists(),
+                    "An older Library instance must not queue a new capture after the destination changes.");
+    return passed;
+}
+
 #if defined(Q_OS_WIN)
 bool windowsRegionKey()
 {
@@ -420,11 +467,12 @@ int main(int argc, char **argv)
     const bool migrationPassed = settingsMigration();
     const bool dialogPassed = settingsDialog();
     const bool libraryPassed = standaloneLibrary();
+    const bool libraryPrivacyPassed = libraryRejectsStaleSettings();
 #if defined(Q_OS_WIN)
     const bool shortcutPassed = windowsRegionKey();
 #else
     const bool shortcutPassed = true;
 #endif
     return annotationsPassed && damagePassed && exportPassed && settingsPassed && destinationPassed
-        && migrationPassed && dialogPassed && libraryPassed && shortcutPassed ? 0 : 1;
+        && migrationPassed && dialogPassed && libraryPassed && libraryPrivacyPassed && shortcutPassed ? 0 : 1;
 }

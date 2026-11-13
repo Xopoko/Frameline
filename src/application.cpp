@@ -160,8 +160,10 @@ void ScreenFrameApplication::showSettings()
     if (m_busy || m_quitting || m_settingsWindow)
         return;
 
+    QString settingsError;
+    const AppSettings saved = loadSettings(defaultSettingsDirectory(), &settingsError);
     QWidget *parent = m_library && m_library->isVisible() ? static_cast<QWidget *>(m_library.get()) : m_editor.get();
-    m_settingsWindow = std::make_unique<SettingsWindow>(m_settings, parent);
+    m_settingsWindow = std::make_unique<SettingsWindow>(saved, parent);
     connect(m_settingsWindow.get(), &SettingsWindow::testRequested, this, [this](const LibrarySettings &settings) {
         m_testClient = std::make_unique<LibraryClient>(settings);
         m_testClient->list({}, m_settingsWindow.get(), [this](QList<LibraryItem>, const QString &, const QString &error) {
@@ -169,15 +171,15 @@ void ScreenFrameApplication::showSettings()
                                             error.isEmpty());
         });
     });
-    if (!m_settingsError.isEmpty()) {
+    if (!settingsError.isEmpty()) {
         QMessageBox::warning(parent, QStringLiteral("ScreenFrame settings"),
-                             m_settingsError + QStringLiteral("\n\nSave new settings to replace the unreadable configuration."));
+                             settingsError + QStringLiteral("\n\nSave new settings to replace the unreadable configuration."));
     }
     const bool accepted = m_settingsWindow->exec() == QDialog::Accepted;
     const AppSettings updated = m_settingsWindow->settings();
     m_settingsWindow.reset();
     m_testClient.reset();
-    if (!accepted || (updated == m_settings && m_settingsError.isEmpty()))
+    if (!accepted)
         return;
 
     const bool libraryChanged = updated.library != m_settings.library;
@@ -188,7 +190,7 @@ void ScreenFrameApplication::showSettings()
         return;
     }
     QString error;
-    if (!saveSettings(updated, defaultSettingsDirectory(), &error)) {
+    if ((updated != saved || !settingsError.isEmpty()) && !saveSettings(updated, defaultSettingsDirectory(), &error)) {
         QMessageBox::warning(parent, QStringLiteral("Settings could not be saved"), error);
         return;
     }
@@ -200,6 +202,7 @@ void ScreenFrameApplication::showSettings()
     if (keepPreviewLocal)
         m_previewCapture = {};
     m_settings = updated;
+    const bool hadSettingsError = !m_settingsError.isEmpty();
     m_settingsError.clear();
     if (libraryChanged) {
         m_library.reset();
@@ -209,6 +212,8 @@ void ScreenFrameApplication::showSettings()
         m_libraryClient->start();
         if (libraryWasVisible)
             showLibrary();
+    } else if (hadSettingsError) {
+        refreshLibraryStatus(0, {});
     }
     if (shortcutChanged || keepPreviewLocal) {
         QString message;

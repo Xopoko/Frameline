@@ -1,7 +1,6 @@
 #include "libraryclient.h"
 
 #include "pngexport.h"
-#include "settings.h"
 
 #include <QDir>
 #include <QFile>
@@ -92,7 +91,7 @@ QString responseError(QNetworkReply *reply)
     if (status >= 400)
         return QObject::tr("The library server returned HTTP %1.").arg(status);
     return reply->error() == QNetworkReply::NoError ? QString{}
-        : QObject::tr("Could not reach the shared library. Try again when Ubuntu is reachable.");
+        : QObject::tr("Could not reach the shared library. Check that the library server is running and reachable.");
 }
 
 struct Download {
@@ -112,9 +111,10 @@ QString sshProgram()
 } // namespace
 
 struct LibraryClient::State : QObject {
-    State(LibraryClient &owner, const LibrarySettings &settings)
+    State(LibraryClient &owner, const LibrarySettings &settings, const QString &directory)
         : owner(owner),
-          queue(libraryQueueDirectory(settings, defaultSettingsDirectory())),
+          settingsDirectory(directory), storageKey(settings.storageKey()),
+          queue(libraryQueueDirectory(settings, settingsDirectory)),
           host(settings.transport == LibraryTransport::Ssh ? settings.sshHost : QString{}),
           port(settings.port), device(settings.device),
           token(settings.isConfigured() ? settings.token.toLatin1() : QByteArray{}),
@@ -126,7 +126,7 @@ struct LibraryClient::State : QObject {
         connect(&retry, &QTimer::timeout, this, [this] { pump(); });
         timeout.setSingleShot(true);
         connect(&timeout, &QTimer::timeout, this, [this] {
-            failTunnel(tr("The private connection to Ubuntu timed out."));
+            failTunnel(tr("The SSH connection to the library timed out."));
             ssh.kill();
         });
         ssh.setProgram(sshProgram());
@@ -155,7 +155,7 @@ struct LibraryClient::State : QObject {
                 failTunnel(tr("Could not start OpenSSH for the library."));
         });
         connect(&ssh, &QProcess::finished, this, [this] {
-            failTunnel(tr("Could not connect to Ubuntu with the configured SSH host."));
+            failTunnel(tr("Could not connect to the library using the configured SSH host."));
         });
     }
 
@@ -178,7 +178,16 @@ struct LibraryClient::State : QObject {
 
     int pending() const
     {
-        return token.isEmpty() || !autoArchive ? 0 : static_cast<int>(writes.size() + queuedIds().size());
+        return archivingAllowed() ? static_cast<int>(writes.size() + queuedIds().size()) : 0;
+    }
+
+    bool archivingAllowed() const
+    {
+        if (!autoArchive || storageKey.isEmpty())
+            return false;
+        // The tray and CLI can be running at the same time with different settings snapshots.
+        const auto saved = loadSettings(settingsDirectory).library;
+        return saved.autoArchive && saved.storageKey() == storageKey;
     }
 
     void status()
@@ -350,7 +359,7 @@ struct LibraryClient::State : QObject {
 
     void pump()
     {
-        if (token.isEmpty() || !autoArchive || active)
+        if (active || !archivingAllowed())
             return;
         for (auto &write : writes) {
             if (write.failed)
@@ -386,6 +395,12 @@ struct LibraryClient::State : QObject {
 
     void upload(quint16 local, bool thumbnail)
     {
+        if (!archivingAllowed()) {
+            active.reset();
+            activeId.clear();
+            status();
+            return;
+        }
         const QDir folder(QDir(queue).filePath(activeId));
         QFile metadata(folder.filePath(QStringLiteral("metadata.json")));
         if (!metadata.open(QIODevice::ReadOnly) || metadata.size() > 4096) {
@@ -446,6 +461,8 @@ struct LibraryClient::State : QObject {
     }
 
     LibraryClient &owner;
+    const QString settingsDirectory;
+    const QString storageKey;
     const QString queue;
     QString host;
     int port = 18745;
@@ -468,8 +485,8 @@ struct LibraryClient::State : QObject {
     QString uploadError;
 };
 
-LibraryClient::LibraryClient(const LibrarySettings &settings, QObject *parent)
-    : QObject(parent), d(std::make_unique<State>(*this, settings)) {}
+LibraryClient::LibraryClient(const LibrarySettings &settings, const QString &settingsDirectory)
+    : d(std::make_unique<State>(*this, settings, settingsDirectory)) {}
 LibraryClient::~LibraryClient() = default;
 
 bool LibraryClient::isConfigured() const { return !d->token.isEmpty(); }
@@ -490,7 +507,7 @@ void LibraryClient::start()
 
 void LibraryClient::enqueue(QImage image, const QString &kind, const QDateTime &capturedAt)
 {
-    if (!isConfigured() || !d->autoArchive || image.isNull())
+    if (image.isNull() || !d->archivingAllowed())
         return;
     const QJsonObject metadata{{QStringLiteral("capturedAt"), capturedAt.toUTC().toString(Qt::ISODateWithMs)},
                                {QStringLiteral("device"), d->device}, {QStringLiteral("kind"), kind},
