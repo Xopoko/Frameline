@@ -6,7 +6,7 @@ ScreenFrame is a native screenshot utility built with C++ and Qt Widgets. Captur
 
 - **Windows 10/11 x64.** Extract the ZIP and open `bin/ScreenFrameGUI.exe`. The CLI is `bin/screenframe.exe`.
 - **macOS 14.4+, Apple Silicon.** Open the DMG and move `ScreenFrame.app` to Applications. Allow ScreenFrame in **System Settings → Privacy & Security → Screen & System Audio Recording**, then reopen it. The packaged app is ad hoc signed.
-- **Ubuntu 24.04+ amd64.** Run `sudo apt install ./screenframe_0.1.2_amd64.deb`, then launch ScreenFrame from the application menu.
+- **Ubuntu 24.04+ amd64.** Run `sudo apt install ./screenframe_0.1.3_amd64.deb`, then launch ScreenFrame from the application menu.
 
 ## Capture and edit
 
@@ -20,6 +20,27 @@ Keep ScreenFrame running to use its global shortcuts. On Windows, `Win+S` opens 
 Full-screen capture takes the monitor under the pointer on Windows, macOS, and X11. For a region capture, drag over the frozen screen and release to open the crop in the editor. Press `Esc` to cancel.
 
 In the editor, use Arrow (`A`), Pen (`P`), Rectangle (`R`), Blur (`B`), or Redact (`X`). Choose a color and line width in the toolbar. Save and copy apply your edits to the exported image. Use opaque redaction for sensitive details.
+
+## Shared screenshot library
+
+Open **Library** from the editor or tray, or run `screenframe library`. The library lists screenshots from every configured device, newest first. Select an image to view it at full resolution or save a PNG copy.
+
+ScreenFrame archives a capture automatically when you close its editor, replace the capture with a new one, or quit the app. It sends the final image with its annotations and redactions. Copy and Save PNG leave the image open for further edits. A `--no-preview` capture is queued immediately. If Ubuntu is unreachable, the device keeps the queued PNG locally and retries while ScreenFrame runs or the next time it starts. Existing screenshots are outside this automatic workflow.
+
+To host the library on Ubuntu, run `bash scripts/install-ubuntu-library.sh` from the repository as the desktop user. The installer creates a user systemd service. Library data and its access token are kept under `~/.local/state/screenframe-library`. The server listens on Ubuntu loopback. See the [server documentation](server/README.md) for the API.
+
+On each device, create an owner-only `~/.screenframe/library.json` using the Ubuntu library token. On Windows, `~` is the user profile. For another device, set `sshHost` to an existing SSH host alias for Ubuntu that can connect noninteractively with host-key verification. For ScreenFrame running directly on the library host, omit `sshHost`.
+
+```json
+{
+  "sshHost": "ubuntu-library",
+  "port": 18745,
+  "token": "<library-token>",
+  "device": "Mac"
+}
+```
+
+Restart ScreenFrame after changing its library configuration. The local upload queue lives under `~/.screenframe/queue`.
 
 ### Ubuntu and Wayland
 
@@ -39,6 +60,7 @@ On other desktops, free `Super+S` in the keyboard settings and assign it to `scr
 ```sh
 screenframe --help
 screenframe --tray
+screenframe library
 screenframe capture full
 screenframe capture region --output area.png
 screenframe capture full --output screenshot.png --no-preview
@@ -66,4 +88,4 @@ ctest --test-dir build --output-on-failure
 
 Run `cmake --install build --prefix <absolute-path>` to stage the app and its Qt dependencies on Windows and macOS. On Ubuntu, run `cpack --config build/CPackConfig.cmake -B dist` to build a DEB.
 
-For the arm64 DMG, configure with `-DCMAKE_OSX_ARCHITECTURES=arm64` and run `bash scripts/package-macos.sh build dist/ScreenFrame-0.1.2-macOS-arm64.dmg` after building.
+For the arm64 DMG, configure with `-DCMAKE_OSX_ARCHITECTURES=arm64` and run `bash scripts/package-macos.sh build dist/ScreenFrame-0.1.3-macOS-arm64.dmg` after building.

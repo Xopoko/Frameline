@@ -53,6 +53,7 @@ int main(int argc, char **argv)
     parser.setApplicationDescription(QStringLiteral(
         "Capture and annotate screenshots.\n\n"
         "screenframe [--tray]\n"
+        "screenframe library\n"
         "screenframe capture full|region [--output <file.png>] [--no-preview]"));
     const auto help = parser.addHelpOption();
     const auto version = parser.addVersionOption();
@@ -77,9 +78,11 @@ int main(int argc, char **argv)
 
     LaunchOptions options;
     const QStringList positional = parser.positionalArguments();
-    if (!positional.isEmpty()) {
+    if (positional == QStringList{QStringLiteral("library")}) {
+        options.mode = LaunchOptions::Mode::Library;
+    } else if (!positional.isEmpty()) {
         if (positional.size() != 2 || positional[0] != QStringLiteral("capture")) {
-            return argumentError(QStringLiteral("Expected 'capture full' or 'capture region'."));
+            return argumentError(QStringLiteral("Expected 'library', 'capture full' or 'capture region'."));
         }
         if (positional[1] == QStringLiteral("full")) {
             options.mode = LaunchOptions::Mode::Full;
@@ -92,12 +95,12 @@ int main(int argc, char **argv)
 
     options.trayOnly = parser.isSet(tray);
     options.preview = !parser.isSet(noPreview);
-    if (options.mode == LaunchOptions::Mode::Desktop) {
-        if (parser.isSet(output) || !options.preview) {
-            return argumentError(QStringLiteral("--output and --no-preview require the capture command."));
-        }
-    } else if (options.trayOnly) {
-        return argumentError(QStringLiteral("Use --tray without a capture command."));
+    const bool capture = options.mode == LaunchOptions::Mode::Full || options.mode == LaunchOptions::Mode::Region;
+    if (!capture && (parser.isSet(output) || !options.preview)) {
+        return argumentError(QStringLiteral("--output and --no-preview require the capture command."));
+    }
+    if (options.trayOnly && options.mode != LaunchOptions::Mode::Desktop) {
+        return argumentError(QStringLiteral("Use --tray without a command."));
     }
 
     if (parser.isSet(output)) {

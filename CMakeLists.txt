@@ -4,7 +4,7 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 14.4 CACHE STRING "Minimum macOS version")
 endif()
 
-project(ScreenFrame VERSION 0.1.2 LANGUAGES CXX)
+project(ScreenFrame VERSION 0.1.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,7 +16,7 @@ add_compile_definitions(SCREENFRAME_VERSION="${PROJECT_VERSION}")
 
 include(CTest)
 include(GNUInstallDirs)
-find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets Network Concurrent)
 
 if(MSVC)
     add_compile_options(/utf-8)
@@ -31,6 +31,10 @@ add_library(screenframe_core STATIC
     src/capture.h
     src/editor.cpp
     src/editor.h
+    src/libraryclient.cpp
+    src/libraryclient.h
+    src/librarywindow.cpp
+    src/librarywindow.h
     src/pngexport.cpp
     src/pngexport.h
     src/regionselector.cpp
@@ -39,7 +43,7 @@ add_library(screenframe_core STATIC
     src/shortcuts.h
 )
 target_include_directories(screenframe_core PUBLIC src)
-target_link_libraries(screenframe_core PUBLIC Qt6::Widgets)
+target_link_libraries(screenframe_core PUBLIC Qt6::Widgets PRIVATE Qt6::Network Qt6::Concurrent)
 
 if(WIN32)
     target_sources(screenframe_core PRIVATE src/platform/windows_shortcuts.cpp src/platform/windows_shortcuts.h)
@@ -118,7 +122,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
     set(CPACK_DEBIAN_COMPRESSION_TYPE xz)
     set(CPACK_DEBIAN_PACKAGE_SECTION graphics)
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6widgets6 (>= 6.4.2), libqt6dbus6 (>= 6.4.2), libxcb1, qt6-qpa-plugins, qt6-wayland, xdg-desktop-portal")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6widgets6 (>= 6.4.2), libqt6dbus6 (>= 6.4.2), libqt6network6 (>= 6.4.2), libqt6concurrent6 (>= 6.4.2), libxcb1, qt6-qpa-plugins, qt6-wayland, xdg-desktop-portal")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Desktop screenshot utility and annotation editor")
     include(CPack)
 endif()

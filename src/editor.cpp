@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QButtonGroup>
 #include <QClipboard>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDir>
@@ -46,7 +47,7 @@ namespace {
 using screenframe::Annotation;
 using screenframe::Tool;
 
-enum class Icon { Full, Region, Arrow, Pen, Rectangle, Blur, Redact, Undo, Redo, Copy, Save, Minus, Plus };
+enum class Icon { Full, Region, Library, Arrow, Pen, Rectangle, Blur, Redact, Undo, Redo, Copy, Save, Minus, Plus };
 
 QIcon makeIcon(Icon icon, const QColor &color = QColor("#dce1fb"))
 {
@@ -72,6 +73,11 @@ QIcon makeIcon(Icon icon, const QColor &color = QColor("#dce1fb"))
         }
         line(9, 12, 15, 12);
         line(12, 9, 12, 15);
+        break;
+    case Icon::Library:
+        painter.drawRoundedRect(QRectF(4, 8, 16, 12), 1.6, 1.6);
+        line(6, 4.5, 18, 4.5);
+        line(9.5, 12, 14.5, 12);
         break;
     case Icon::Arrow:
         line(5, 19, 19, 5);
@@ -421,6 +427,11 @@ struct EditorWindow::Ui {
         warning->setWordWrap(true);
         warning->hide();
         layout->addWidget(warning);
+        libraryStatus = makeLabel({}, "warning", root);
+        libraryStatus->setTextFormat(Qt::PlainText);
+        libraryStatus->setWordWrap(true);
+        libraryStatus->hide();
+        layout->addWidget(libraryStatus);
 
         pages = new QStackedWidget(root);
         layout->addWidget(pages, 1);
@@ -434,6 +445,7 @@ struct EditorWindow::Ui {
     QWidget *root = nullptr;
     QStackedWidget *pages = nullptr;
     QLabel *warning = nullptr;
+    QLabel *libraryStatus = nullptr;
     QLabel *fullKey = nullptr;
     QLabel *regionKey = nullptr;
     QLabel *dimensions = nullptr;
@@ -480,6 +492,10 @@ struct EditorWindow::Ui {
         row->addWidget(region);
         QObject::connect(full, &QPushButton::clicked, &window, &EditorWindow::fullCaptureRequested);
         QObject::connect(region, &QPushButton::clicked, &window, &EditorWindow::regionCaptureRequested);
+
+        auto *library = makeButton(QStringLiteral("Library"), Icon::Library, header);
+        row->addWidget(library);
+        QObject::connect(library, &QPushButton::clicked, &window, &EditorWindow::libraryRequested);
 
         copy = makeButton(QStringLiteral("Copy"), Icon::Copy, header);
         save = makeButton(QStringLiteral("Save PNG"), Icon::Save, header, "primary");
@@ -912,6 +928,14 @@ EditorWindow::EditorWindow(QWidget *parent) : QMainWindow(parent), ui(std::make_
 
 EditorWindow::~EditorWindow() = default;
 
+void EditorWindow::closeEvent(QCloseEvent *event)
+{
+    QMainWindow::closeEvent(event);
+    if (event->isAccepted()) {
+        emit closeAccepted();
+    }
+}
+
 void EditorWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
@@ -928,6 +952,11 @@ void EditorWindow::setCapture(const QImage &image)
     ui->setCapture(image);
 }
 
+QImage EditorWindow::currentImage() const
+{
+    return ui->canvas->image;
+}
+
 void EditorWindow::setShortcuts(const QString &full, const QString &region, const QString &warning)
 {
     ui->fullKey->setText(full);
@@ -938,6 +967,12 @@ void EditorWindow::setShortcuts(const QString &full, const QString &region, cons
     ui->region->setToolTip(region);
     ui->warning->setText(warning);
     ui->warning->setVisible(!warning.isEmpty());
+}
+
+void EditorWindow::setLibraryStatus(const QString &message)
+{
+    ui->libraryStatus->setText(message);
+    ui->libraryStatus->setVisible(!message.isEmpty());
 }
 
 bool EditorWindow::hasUnsavedChanges() const
