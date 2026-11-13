@@ -52,12 +52,12 @@ void ScreenFrameApplication::start()
         m_tray.setIcon(QApplication::windowIcon());
         m_tray.setToolTip(QStringLiteral("ScreenFrame"));
         m_trayMenu = std::make_unique<QMenu>();
-        m_trayMenu->addAction(QStringLiteral("Открыть ScreenFrame"), this, &ScreenFrameApplication::showEditor);
+        m_trayMenu->addAction(QStringLiteral("Open ScreenFrame"), this, &ScreenFrameApplication::showEditor);
         m_trayMenu->addSeparator();
-        m_trayMenu->addAction(QStringLiteral("Снять экран"), this, [this] { beginCapture(false, true); });
-        m_trayMenu->addAction(QStringLiteral("Снять область"), this, [this] { beginCapture(true, true); });
+        m_trayMenu->addAction(QStringLiteral("Capture Screen"), this, [this] { beginCapture(false, true); });
+        m_trayMenu->addAction(QStringLiteral("Capture Region"), this, [this] { beginCapture(true, true); });
         m_trayMenu->addSeparator();
-        m_trayMenu->addAction(QStringLiteral("Выйти"), this, [this] {
+        m_trayMenu->addAction(QStringLiteral("Quit"), this, [this] {
             if (m_editor && !m_editor->isVisible() && m_editor->hasUnsavedChanges()) {
                 showEditor();
             }
@@ -177,7 +177,7 @@ void ScreenFrameApplication::finishCapture(QImage image)
     if (!m_options.output.isEmpty()) {
         QString error;
         if (!savePng(image, m_options.output, &error)) {
-            failCapture(QStringLiteral("Не удалось записать PNG в %1. %2").arg(m_options.output, error));
+            failCapture(QStringLiteral("Could not save the PNG to %1. %2").arg(m_options.output, error));
             return;
         }
         m_options.output.clear();
@@ -212,7 +212,7 @@ void ScreenFrameApplication::failCapture(const QString &message)
     }
 
     showEditor();
-    QMessageBox::warning(m_editor.get(), QStringLiteral("Не удалось сделать скриншот"), message);
+    QMessageBox::warning(m_editor.get(), QStringLiteral("Capture Failed"), message);
 }
 
 void ScreenFrameApplication::requestPortalPermission(const QString &message)
@@ -226,11 +226,11 @@ void ScreenFrameApplication::requestPortalPermission(const QString &message)
     window.showNormal();
     window.raise();
     window.activateWindow();
-    QMessageBox dialog(QMessageBox::Question, QStringLiteral("Разрешение на захват экрана"), message,
+    QMessageBox dialog(QMessageBox::Question, QStringLiteral("Screen Capture Permission"), message,
                        QMessageBox::NoButton, &window);
-    dialog.setInformativeText(QStringLiteral("ScreenFrame повторит запрос с открытым окном. "
-                                              "После подтверждения окно скроется и будет сделан новый снимок."));
-    const auto *retry = dialog.addButton(QStringLiteral("Запросить доступ"), QMessageBox::AcceptRole);
+    dialog.setInformativeText(QStringLiteral("ScreenFrame will request access with this window open. "
+                                              "Once approved, it will hide the window and take a new screenshot."));
+    const auto *retry = dialog.addButton(QStringLiteral("Request Access"), QMessageBox::AcceptRole);
     dialog.addButton(QMessageBox::Cancel);
     dialog.exec();
     if (dialog.clickedButton() != retry) {

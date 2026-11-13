@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QFileInfo>
+#include <QLocale>
 #include <QTextStream>
 
 #include <utility>
@@ -36,7 +37,7 @@ QStringList commandLine(int argc, char **argv)
 
 int argumentError(const QString &message)
 {
-    QTextStream(stderr) << "screenframe: " << message << "\n" << "Справка доступна через --help.\n";
+    QTextStream(stderr) << "screenframe: " << message << "\nUse --help for usage.\n";
     return 1;
 }
 
@@ -50,15 +51,15 @@ int main(int argc, char **argv)
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral(
-        "Захват экрана и редактирование скриншотов.\n\n"
+        "Capture and annotate screenshots.\n\n"
         "screenframe [--tray]\n"
         "screenframe capture full|region [--output <file.png>] [--no-preview]"));
     const auto help = parser.addHelpOption();
     const auto version = parser.addVersionOption();
-    const QCommandLineOption tray(QStringLiteral("tray"), QStringLiteral("Запустить приложение в системном трее."));
+    const QCommandLineOption tray(QStringLiteral("tray"), QStringLiteral("Start in the system tray."));
     const QCommandLineOption output({QStringLiteral("o"), QStringLiteral("output")},
-                                   QStringLiteral("Сразу сохранить снимок в PNG."), QStringLiteral("file.png"));
-    const QCommandLineOption noPreview(QStringLiteral("no-preview"), QStringLiteral("Завершиться после записи PNG."));
+                                   QStringLiteral("Save the capture as a PNG."), QStringLiteral("file.png"));
+    const QCommandLineOption noPreview(QStringLiteral("no-preview"), QStringLiteral("Exit after saving the PNG."));
     parser.addOptions({tray, output, noPreview});
 
     if (!parser.parse(commandLine(argc, argv))) {
@@ -78,14 +79,14 @@ int main(int argc, char **argv)
     const QStringList positional = parser.positionalArguments();
     if (!positional.isEmpty()) {
         if (positional.size() != 2 || positional[0] != QStringLiteral("capture")) {
-            return argumentError(QStringLiteral("Ожидается команда capture full или capture region."));
+            return argumentError(QStringLiteral("Expected 'capture full' or 'capture region'."));
         }
         if (positional[1] == QStringLiteral("full")) {
             options.mode = LaunchOptions::Mode::Full;
         } else if (positional[1] == QStringLiteral("region")) {
             options.mode = LaunchOptions::Mode::Region;
         } else {
-            return argumentError(QStringLiteral("Режим захвата должен быть full или region."));
+            return argumentError(QStringLiteral("The capture mode must be 'full' or 'region'."));
         }
     }
 
@@ -93,21 +94,22 @@ int main(int argc, char **argv)
     options.preview = !parser.isSet(noPreview);
     if (options.mode == LaunchOptions::Mode::Desktop) {
         if (parser.isSet(output) || !options.preview) {
-            return argumentError(QStringLiteral("Параметры --output и --no-preview относятся к команде capture."));
+            return argumentError(QStringLiteral("--output and --no-preview require the capture command."));
         }
     } else if (options.trayOnly) {
-        return argumentError(QStringLiteral("Параметр --tray запускает приложение без команды capture."));
+        return argumentError(QStringLiteral("Use --tray without a capture command."));
     }
 
     if (parser.isSet(output)) {
         options.output = parser.value(output);
         if (QFileInfo(options.output).suffix().compare(QStringLiteral("png"), Qt::CaseInsensitive) != 0) {
-            return argumentError(QStringLiteral("Укажите путь с расширением .png для --output."));
+            return argumentError(QStringLiteral("The --output path must end in .png."));
         }
     } else if (!options.preview) {
-        return argumentError(QStringLiteral("Для --no-preview укажите --output <file.png>."));
+        return argumentError(QStringLiteral("--no-preview requires --output <file.png>."));
     }
 
+    QLocale::setDefault(QLocale(QLocale::English));
     QApplication app(argc, argv);
     QApplication::setApplicationDisplayName(QStringLiteral("ScreenFrame"));
     QApplication::setDesktopFileName(QStringLiteral("io.github.xopoko.ScreenFrame"));

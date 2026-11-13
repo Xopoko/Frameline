@@ -135,11 +135,11 @@ public:
         setAttribute(Qt::WA_OpaquePaintEvent);
         setCursor(Qt::CrossCursor);
         setFocusPolicy(Qt::StrongFocus);
-        setWindowTitle(QStringLiteral("ScreenFrame — Выбор области"));
-        setAccessibleDescription(QStringLiteral("Выделите прямоугольную область. Escape — отмена."));
+        setWindowTitle(QStringLiteral("ScreenFrame — Select region"));
+        setAccessibleDescription(QStringLiteral("Select a rectangular region. Press Esc to cancel."));
 
-        cancel_ = new QPushButton(QStringLiteral("Отмена  Esc"), this);
-        cancel_->setAccessibleName(QStringLiteral("Отменить выбор области"));
+        cancel_ = new QPushButton(QStringLiteral("Cancel  Esc"), this);
+        cancel_->setAccessibleName(QStringLiteral("Cancel region selection"));
         cancel_->setCursor(Qt::PointingHandCursor);
         cancel_->installEventFilter(this);
         cancel_->setStyleSheet(QStringLiteral(
@@ -418,8 +418,8 @@ private:
     const QImage image_;
     const QRectF layout_;
     const bool fit_;
-    const QString title_ = QStringLiteral("Выберите область");
-    const QString help_ = QStringLiteral("Нажмите и перетащите курсор");
+    const QString title_ = QStringLiteral("Select a region");
+    const QString help_ = QStringLiteral("Click and drag to select");
     bool dragging_ = false;
     QRectF selection_;
     QRectF visible_;

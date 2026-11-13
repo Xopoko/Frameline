@@ -165,7 +165,7 @@ public:
         setCursor(Qt::CrossCursor);
         setFocusPolicy(Qt::StrongFocus);
         setAttribute(Qt::WA_OpaquePaintEvent);
-        setAccessibleName(QStringLiteral("Снимок экрана"));
+        setAccessibleName(QStringLiteral("Screenshot"));
     }
 
     QImage image;
@@ -474,15 +474,15 @@ struct EditorWindow::Ui {
         row->addWidget(mark);
         row->addWidget(makeLabel(QStringLiteral("ScreenFrame"), "brand", header));
         row->addStretch();
-        full = makeButton(QStringLiteral("Весь экран"), Icon::Full, header);
-        region = makeButton(QStringLiteral("Область"), Icon::Region, header);
+        full = makeButton(QStringLiteral("Full screen"), Icon::Full, header);
+        region = makeButton(QStringLiteral("Region"), Icon::Region, header);
         row->addWidget(full);
         row->addWidget(region);
         QObject::connect(full, &QPushButton::clicked, &window, &EditorWindow::fullCaptureRequested);
         QObject::connect(region, &QPushButton::clicked, &window, &EditorWindow::regionCaptureRequested);
 
-        copy = makeButton(QStringLiteral("Копировать"), Icon::Copy, header);
-        save = makeButton(QStringLiteral("Сохранить PNG"), Icon::Save, header, "primary");
+        copy = makeButton(QStringLiteral("Copy"), Icon::Copy, header);
+        save = makeButton(QStringLiteral("Save PNG"), Icon::Save, header, "primary");
         row->addWidget(copy);
         row->addWidget(save);
         QObject::connect(copy, &QPushButton::clicked, &window, [this] { copyImage(); });
@@ -502,7 +502,7 @@ struct EditorWindow::Ui {
         auto *contentLayout = new QVBoxLayout(content);
         contentLayout->setContentsMargins(0, 0, 0, 0);
         contentLayout->setSpacing(16);
-        contentLayout->addWidget(makeLabel(QStringLiteral("Снимок экрана"), "launchHeading", content));
+        contentLayout->addWidget(makeLabel(QStringLiteral("Take a screenshot"), "launchHeading", content));
 
         auto *cards = new QHBoxLayout;
         cards->setSpacing(14);
@@ -534,16 +534,16 @@ struct EditorWindow::Ui {
         symbol->setPixmap(makeIcon(icon, QColor("#c9b0ff")).pixmap(QSize(27, 27)));
         column->addWidget(symbol);
         column->addSpacing(2);
-        const QString title = fullScreen ? QStringLiteral("Весь экран") : QStringLiteral("Область экрана");
+        const QString title = fullScreen ? QStringLiteral("Full screen") : QStringLiteral("Screen region");
         column->addWidget(makeLabel(title, "cardHeading", card));
-        auto *description = makeLabel(fullScreen ? QStringLiteral("Снимок текущего монитора")
-                                                  : QStringLiteral("Выбор на застывшем экране"), "muted", card);
+        auto *description = makeLabel(fullScreen ? QStringLiteral("Capture the current display")
+                                                  : QStringLiteral("Select an area on the frozen screen"), "muted", card);
         description->setWordWrap(true);
         column->addWidget(description);
         column->addSpacing(10);
         auto *controls = new QHBoxLayout;
-        auto *button = new QPushButton(fullScreen ? QStringLiteral("Снять") : QStringLiteral("Выбрать"), card);
-        button->setAccessibleName(fullScreen ? QStringLiteral("Снять весь экран") : QStringLiteral("Выбрать область экрана"));
+        auto *button = new QPushButton(fullScreen ? QStringLiteral("Capture") : QStringLiteral("Select"), card);
+        button->setAccessibleName(fullScreen ? QStringLiteral("Capture full screen") : QStringLiteral("Select screen region"));
         if (!fullScreen) {
             button->setObjectName(QStringLiteral("primary"));
         }
@@ -597,16 +597,16 @@ struct EditorWindow::Ui {
         auto *column = new QVBoxLayout(rail);
         column->setContentsMargins(11, 12, 11, 10);
         column->setSpacing(4);
-        column->addWidget(makeLabel(QStringLiteral("Инструменты"), "section", rail));
+        column->addWidget(makeLabel(QStringLiteral("Tools"), "section", rail));
         column->addSpacing(3);
         tools = new QButtonGroup(rail);
         struct ToolChoice { Tool tool; Icon icon; const char *label; const char *key; };
         const std::array choices{
-            ToolChoice{Tool::Arrow, Icon::Arrow, "Стрелка", "A"},
-            ToolChoice{Tool::Pen, Icon::Pen, "Перо", "P"},
-            ToolChoice{Tool::Rectangle, Icon::Rectangle, "Рамка", "R"},
-            ToolChoice{Tool::Blur, Icon::Blur, "Размытие", "B"},
-            ToolChoice{Tool::Redact, Icon::Redact, "Скрыть", "X"},
+            ToolChoice{Tool::Arrow, Icon::Arrow, "Arrow", "A"},
+            ToolChoice{Tool::Pen, Icon::Pen, "Pen", "P"},
+            ToolChoice{Tool::Rectangle, Icon::Rectangle, "Rectangle", "R"},
+            ToolChoice{Tool::Blur, Icon::Blur, "Blur", "B"},
+            ToolChoice{Tool::Redact, Icon::Redact, "Redact", "X"},
         };
         for (const auto &choice : choices) {
             const QString label = QString::fromUtf8(choice.label);
@@ -632,14 +632,14 @@ struct EditorWindow::Ui {
         column->addSpacing(5);
         column->addWidget(divider);
         column->addSpacing(5);
-        column->addWidget(makeLabel(QStringLiteral("Цвет"), "section", rail));
+        column->addWidget(makeLabel(QStringLiteral("Color"), "section", rail));
         color = new QComboBox(rail);
-        color->setAccessibleName(QStringLiteral("Цвет линии"));
+        color->setAccessibleName(QStringLiteral("Stroke color"));
         const std::array colors{
-            std::pair{"Красный", "#ff5373"}, std::pair{"Оранжевый", "#ff9e4b"},
-            std::pair{"Жёлтый", "#ffdb6a"}, std::pair{"Зелёный", "#60d9a2"},
-            std::pair{"Голубой", "#6db6ff"}, std::pair{"Фиолетовый", "#b58aff"},
-            std::pair{"Белый", "#ffffff"}, std::pair{"Чёрный", "#111420"},
+            std::pair{"Red", "#ff5373"}, std::pair{"Orange", "#ff9e4b"},
+            std::pair{"Yellow", "#ffdb6a"}, std::pair{"Green", "#60d9a2"},
+            std::pair{"Blue", "#6db6ff"}, std::pair{"Purple", "#b58aff"},
+            std::pair{"White", "#ffffff"}, std::pair{"Black", "#111420"},
         };
         for (const auto &[name, value] : colors) {
             const QColor swatch(QString::fromLatin1(value));
@@ -653,11 +653,11 @@ struct EditorWindow::Ui {
         column->addWidget(color);
 
         column->addSpacing(3);
-        column->addWidget(makeLabel(QStringLiteral("Толщина"), "section", rail));
+        column->addWidget(makeLabel(QStringLiteral("Thickness"), "section", rail));
         thickness = new QComboBox(rail);
-        thickness->setAccessibleName(QStringLiteral("Толщина линии"));
+        thickness->setAccessibleName(QStringLiteral("Stroke thickness"));
         for (const int pixels : {2, 4, 6, 10, 16, 24}) {
-            thickness->addItem(QStringLiteral("%1 пикс.").arg(pixels), pixels);
+            thickness->addItem(QStringLiteral("%1 px").arg(pixels), pixels);
         }
         thickness->setCurrentIndex(2);
         QObject::connect(thickness, &QComboBox::currentIndexChanged, &window, [this] {
@@ -675,8 +675,8 @@ struct EditorWindow::Ui {
         auto *row = new QHBoxLayout(footer);
         row->setContentsMargins(12, 6, 12, 6);
         row->setSpacing(6);
-        undo = makeIconButton(Icon::Undo, QStringLiteral("Отменить"), footer);
-        redo = makeIconButton(Icon::Redo, QStringLiteral("Повторить"), footer);
+        undo = makeIconButton(Icon::Undo, QStringLiteral("Undo"), footer);
+        redo = makeIconButton(Icon::Redo, QStringLiteral("Redo"), footer);
         QObject::connect(undo, &QToolButton::clicked, &window, [this] { moveHistory(-1); });
         QObject::connect(redo, &QToolButton::clicked, &window, [this] { moveHistory(1); });
         row->addWidget(undo);
@@ -688,14 +688,14 @@ struct EditorWindow::Ui {
         row->addSpacing(9);
         row->addWidget(status, 1);
 
-        auto *fitButton = new QPushButton(QStringLiteral("Вписать"), footer);
-        fitButton->setToolTip(QStringLiteral("Вписать снимок в окно · 0"));
+        auto *fitButton = new QPushButton(QStringLiteral("Fit"), footer);
+        fitButton->setToolTip(QStringLiteral("Fit screenshot to window · 0"));
         QObject::connect(fitButton, &QPushButton::clicked, &window, [this] { setFit(); });
         row->addWidget(fitButton);
-        auto *minus = makeIconButton(Icon::Minus, QStringLiteral("Уменьшить масштаб"), footer);
-        auto *plus = makeIconButton(Icon::Plus, QStringLiteral("Увеличить масштаб"), footer);
+        auto *minus = makeIconButton(Icon::Minus, QStringLiteral("Zoom out"), footer);
+        auto *plus = makeIconButton(Icon::Plus, QStringLiteral("Zoom in"), footer);
         auto *actual = new QPushButton(QStringLiteral("1:1"), footer);
-        actual->setToolTip(QStringLiteral("Исходный размер · 1"));
+        actual->setToolTip(QStringLiteral("Actual size · 1"));
         QObject::connect(minus, &QToolButton::clicked, &window, [this] { stepZoom(-1); });
         QObject::connect(plus, &QToolButton::clicked, &window, [this] { stepZoom(1); });
         QObject::connect(actual, &QPushButton::clicked, &window, [this] { setZoom(1); });
@@ -756,7 +756,7 @@ struct EditorWindow::Ui {
         fit = true;
         canvas->cancelStroke();
         pages->setCurrentIndex(source.isNull() ? 0 : 1);
-        dimensions->setText(QStringLiteral("%1 × %2 пикс.").arg(source.width()).arg(source.height()));
+        dimensions->setText(QStringLiteral("%1 × %2 px").arg(source.width()).arg(source.height()));
         updateImage();
         updateZoom();
     }
@@ -866,7 +866,7 @@ struct EditorWindow::Ui {
             workspace->horizontalScrollBar()->setValue(qRound(relative.x() * size.width()) - viewCenter.x());
             workspace->verticalScrollBar()->setValue(qRound(relative.y() * size.height()) - viewCenter.y());
         }
-        zoomLabel->setText(QStringLiteral("%1 %").arg(qRound(zoom * 100)));
+        zoomLabel->setText(QStringLiteral("%1%").arg(qRound(zoom * 100)));
     }
 
     void copyImage()
@@ -877,7 +877,7 @@ struct EditorWindow::Ui {
         QApplication::clipboard()->setImage(canvas->image);
         cleanCount = historyCount;
         refreshControls();
-        status->setText(QStringLiteral("Снимок скопирован"));
+        status->setText(QStringLiteral("Copied to clipboard"));
     }
 
     void saveImage()
@@ -890,21 +890,21 @@ struct EditorWindow::Ui {
             directory = QDir::home();
         }
         const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd_HH-mm-ss"));
-        QFileDialog dialog(&window, QStringLiteral("Сохранить снимок"), directory.absolutePath(), QStringLiteral("PNG (*.png)"));
+        QFileDialog dialog(&window, QStringLiteral("Save screenshot"), directory.absolutePath(), QStringLiteral("PNG (*.png)"));
         dialog.setAcceptMode(QFileDialog::AcceptSave);
         dialog.setDefaultSuffix(QStringLiteral("png"));
-        dialog.selectFile(QStringLiteral("Снимок_%1.png").arg(timestamp));
+        dialog.selectFile(QStringLiteral("Screenshot_%1.png").arg(timestamp));
         if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
             return;
         }
         QString error;
         if (!savePng(canvas->image, dialog.selectedFiles().constFirst(), &error)) {
-            QMessageBox::warning(&window, QStringLiteral("Не удалось сохранить снимок"), error);
+            QMessageBox::warning(&window, QStringLiteral("Could not save screenshot"), error);
             return;
         }
         cleanCount = historyCount;
         refreshControls();
-        status->setText(QStringLiteral("Снимок сохранён"));
+        status->setText(QStringLiteral("Screenshot saved"));
     }
 };
 
@@ -950,10 +950,10 @@ bool EditorWindow::confirmReplace()
     if (!hasUnsavedChanges()) {
         return true;
     }
-    QMessageBox dialog(QMessageBox::Question, QStringLiteral("Новый снимок"),
-                       QStringLiteral("На текущем снимке есть несохранённые правки."), QMessageBox::NoButton, this);
-    auto *replace = dialog.addButton(QStringLiteral("Продолжить"), QMessageBox::AcceptRole);
-    auto *cancel = dialog.addButton(QStringLiteral("Отмена"), QMessageBox::RejectRole);
+    QMessageBox dialog(QMessageBox::Question, QStringLiteral("Unsaved changes"),
+                       QStringLiteral("The current screenshot has unsaved changes."), QMessageBox::NoButton, this);
+    auto *replace = dialog.addButton(QStringLiteral("Continue"), QMessageBox::AcceptRole);
+    auto *cancel = dialog.addButton(QStringLiteral("Cancel"), QMessageBox::RejectRole);
     dialog.setDefaultButton(cancel);
     dialog.exec();
     return dialog.clickedButton() == replace;

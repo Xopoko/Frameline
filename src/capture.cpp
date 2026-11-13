@@ -94,13 +94,10 @@ void ScreenCapture::capture(bool region, QWidget* portalParent)
 #if defined(Q_OS_LINUX)
     if (usesScreenshotPortal()) {
         auto* request = new Portal::Request(this);
-        const auto message = tr("Wayland не предоставил снимок. Проверьте разрешение "
-                                "на снимки экрана в настройках системы.");
+        const auto message = tr("Wayland did not provide a screenshot. Check screen capture permissions in system settings.");
         const auto responseFailure = portalParent
-            ? tr("Wayland не разрешил захват экрана. Разрешите приложению делать снимки "
-                 "в настройках системы и повторите попытку.")
-            : tr("Wayland не разрешил захват экрана. При первом запуске попробуйте ещё раз "
-                 "из активного окна ScreenFrame. Оно может попасть в первый снимок.");
+            ? tr("Wayland denied screen capture. Allow ScreenFrame to capture the screen in system settings and try again.")
+            : tr("Wayland denied screen capture. On the first run, try again from the active ScreenFrame window.");
         connect(request, &Portal::Request::failed, this, [this, message] { emit failed(message); });
         connect(request, &Portal::Request::responded, this,
                 [this, responseFailure](uint code, const QVariantMap& results) {
@@ -113,7 +110,7 @@ void ScreenCapture::capture(bool region, QWidget* portalParent)
                 return;
             }
             if (code != 0) {
-                emit failed(tr("Не удалось получить снимок от Wayland."));
+                emit failed(tr("Could not get a screenshot from Wayland."));
                 return;
             }
             const QUrl uri(results.value(QStringLiteral("uri")).toString());
@@ -121,7 +118,7 @@ void ScreenCapture::capture(bool region, QWidget* portalParent)
             if (uri.isLocalFile())
                 image.load(uri.toLocalFile());
             if (image.isNull()) {
-                emit failed(tr("Не удалось открыть снимок, полученный от Wayland."));
+                emit failed(tr("Could not open the screenshot from Wayland."));
                 return;
             }
             image.setDevicePixelRatio(1);
@@ -163,7 +160,7 @@ void ScreenCapture::capture(bool region, QWidget* portalParent)
         }
     }
     if (frames.isEmpty())
-        emit failed(tr("Не удалось сделать снимок экрана."));
+        emit failed(tr("Could not capture the screen."));
     else
         emit captured(frames);
 #endif

@@ -4,7 +4,7 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 14.4 CACHE STRING "Minimum macOS version")
 endif()
 
-project(ScreenFrame VERSION 0.1.1 LANGUAGES CXX)
+project(ScreenFrame VERSION 0.1.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -42,6 +42,7 @@ target_include_directories(screenframe_core PUBLIC src)
 target_link_libraries(screenframe_core PUBLIC Qt6::Widgets)
 
 if(WIN32)
+    target_sources(screenframe_core PRIVATE src/platform/windows_shortcuts.cpp src/platform/windows_shortcuts.h)
     target_link_libraries(screenframe_core PRIVATE user32 shell32 gdi32 dwmapi)
 elseif(APPLE)
     enable_language(OBJCXX)
@@ -108,6 +109,7 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     install(FILES resources/io.github.xopoko.ScreenFrame.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES scripts/configure-gnome-shortcut.py DESTINATION ${CMAKE_INSTALL_DATADIR}/screenframe)
     install(FILES resources/ScreenFrame.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
         RENAME io.github.xopoko.ScreenFrame.png)
     set(CPACK_GENERATOR DEB)

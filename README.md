@@ -1,29 +1,40 @@
 # ScreenFrame
 
-Нативная утилита для скриншотов на C++ и Qt Widgets. Работает из окна, системного трея и командной строки.
+ScreenFrame is a native screenshot utility built with C++ and Qt Widgets. Capture from the app, the system tray, a global shortcut, or the command line.
 
-## Запуск
+## Install
 
-- **Windows 10/11 x64.** Распакуйте ZIP и откройте `bin/ScreenFrameGUI.exe`. Рядом находится CLI `bin/screenframe.exe`.
-- **macOS 14.4+, Apple Silicon.** Перетащите `ScreenFrame.app` из DMG в «Программы». При первом захвате разрешите запись экрана в «Системные настройки» → «Конфиденциальность и безопасность», затем перезапустите приложение. У локальной сборки подпись ad hoc.
-- **Ubuntu 24.04+ amd64.** Установите `sudo apt install ./screenframe_0.1.1_amd64.deb` и откройте ScreenFrame из меню приложений.
+- **Windows 10/11 x64.** Extract the ZIP and open `bin/ScreenFrameGUI.exe`. The CLI is `bin/screenframe.exe`.
+- **macOS 14.4+, Apple Silicon.** Open the DMG and move `ScreenFrame.app` to Applications. Allow ScreenFrame in **System Settings → Privacy & Security → Screen & System Audio Recording**, then reopen it. The packaged app is ad hoc signed.
+- **Ubuntu 24.04+ amd64.** Run `sudo apt install ./screenframe_0.1.2_amd64.deb`, then launch ScreenFrame from the application menu.
 
-| Действие | Windows и Ubuntu | macOS |
+## Capture and edit
+
+| Action | Windows and Ubuntu | macOS |
 | --- | --- | --- |
-| Снять весь экран | `Ctrl` + `Alt` + `Shift` + `1` | `⌘` + `⌥` + `⇧` + `1` |
-| Выбрать область | `Ctrl` + `Alt` + `Shift` + `2` | `⌘` + `⌥` + `⇧` + `2` |
+| Capture the screen | `Ctrl+Alt+Shift+1` | `⌘⌥⇧1` |
+| Capture a region | `Win+S` (`Super+S` on Ubuntu) | `⌘⇧5` |
 
-Горячие клавиши работают, пока ScreenFrame запущен. Захват всего экрана на Windows, macOS и X11 снимает монитор под указателем. Для области перетащите мышь по замороженному изображению. `Esc` отменяет выбор.
+Keep ScreenFrame running to use its global shortcuts. On Windows, `Win+S` opens ScreenFrame's region selector in place of Windows Search while the app is running. On macOS, open **System Settings → Keyboard → Keyboard Shortcuts → Screenshots**, turn off **Screenshot and recording options**, and reopen ScreenFrame. This frees `⌘⇧5` for ScreenFrame.
 
-В редакторе доступны стрелка (`A`), перо (`P`), рамка (`R`), размытие (`B`) и непрозрачная заливка (`X`). Цвет и толщину можно менять в панели инструментов. Сохранение и копирование применяют правки к пикселям изображения. Для конфиденциальных данных используйте непрозрачную заливку.
+Full-screen capture takes the monitor under the pointer on Windows, macOS, and X11. For a region capture, drag over the frozen screen and release to open the crop in the editor. Press `Esc` to cancel.
 
-### Ubuntu с Wayland
+In the editor, use Arrow (`A`), Pen (`P`), Rectangle (`R`), Blur (`B`), or Redact (`X`). Choose a color and line width in the toolbar. Save and copy apply your edits to the exported image. Use opaque redaction for sensitive details.
 
-Системный портал может запросить подтверждение захвата. Снимок всего экрана охватывает рабочий стол, возвращённый порталом. Для выбора области ScreenFrame показывает этот снимок на одном дисплее. GNOME может сохранить исходный снимок в «Изображениях».
+### Ubuntu and Wayland
 
-Поддержка глобальных клавиш зависит от среды рабочего стола. Если ScreenFrame сообщает, что сочетания недоступны, в настройках клавиатуры создайте два пользовательских сочетания для `screenframe capture full` и `screenframe capture region`. Это позволяет запускать захват и без открытого ScreenFrame.
+Wayland can prompt for screen capture permission. A full-screen capture contains the desktop returned by the screenshot portal. For a region capture, ScreenFrame displays the frozen desktop image on one monitor. GNOME may also save the original screenshot in Pictures.
 
-## Командная строка
+On GNOME, the system can run `screenframe capture region` for `Super+S` even when ScreenFrame is closed. The included setup tool replaces the standard GNOME binding for that combination and can restore it later. Run it as the signed-in desktop user.
+
+```sh
+python3 /usr/share/screenframe/configure-gnome-shortcut.py install
+python3 /usr/share/screenframe/configure-gnome-shortcut.py remove
+```
+
+On other desktops, free `Super+S` in the keyboard settings and assign it to `screenframe capture region` if ScreenFrame cannot register it. You can also assign `Ctrl+Alt+Shift+1` to `screenframe capture full` on systems without the global shortcuts portal.
+
+## Command line
 
 ```sh
 screenframe --help
@@ -33,19 +44,19 @@ screenframe capture region --output area.png
 screenframe capture full --output screenshot.png --no-preview
 ```
 
-В Windows используйте `screenframe.exe`, в macOS — `/Applications/ScreenFrame.app/Contents/MacOS/ScreenFrame`. Захват запускается в графическом сеансе. `--output` записывает исходный снимок сразу после захвата. Правки можно сохранить из редактора. `--no-preview` завершает программу после записи. Код выхода `0` означает успех, `1` — ошибку, `2` — отмену захвата.
+Use `screenframe.exe` on Windows and `/Applications/ScreenFrame.app/Contents/MacOS/ScreenFrame` on macOS. Capture requires a graphical session. `--output` saves the original capture immediately. Save any later edits from the editor. `--no-preview` exits after writing the PNG.
 
-## Сборка
+The exit code is `0` on success, `1` on error, or `2` if you cancel the capture.
 
-Нужны CMake 3.21.1+, компилятор C++20 и Qt 6.4+ Widgets. На Windows рекомендуются MSVC и Qt 6.8+. Для сборки macOS нужны Xcode и Qt для macOS.
+## Build from source
 
-На Ubuntu установите зависимости:
+Use CMake 3.21.1 or newer, a C++20 compiler, and Qt 6.4 or newer with Widgets. Use MSVC with Qt 6.8 or newer on Windows, and Xcode with the official Qt macOS SDK on macOS. Set `-DCMAKE_PREFIX_PATH=/path/to/Qt` if CMake needs help finding Qt.
+
+On Ubuntu, install the build dependencies.
 
 ```sh
 sudo apt install build-essential cmake ninja-build qt6-base-dev libx11-dev libxcb1-dev qt6-wayland
 ```
-
-Соберите и запустите тесты. Для Qt вне системных путей укажите `-DCMAKE_PREFIX_PATH=/path/to/Qt`.
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -53,6 +64,6 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-`cmake --install build --prefix <абсолютный-путь>` собирает каталог приложения с Qt на Windows и macOS. На Ubuntu `cpack --config build/CPackConfig.cmake -B dist` создаёт DEB.
+Run `cmake --install build --prefix <absolute-path>` to stage the app and its Qt dependencies on Windows and macOS. On Ubuntu, run `cpack --config build/CPackConfig.cmake -B dist` to build a DEB.
 
-Для компактного DMG используйте официальный SDK Qt для macOS. После сборки с `-DCMAKE_OSX_ARCHITECTURES=arm64` выполните `bash scripts/package-macos.sh build dist/ScreenFrame-0.1.1-macOS-arm64.dmg`.
+For the arm64 DMG, configure with `-DCMAKE_OSX_ARCHITECTURES=arm64` and run `bash scripts/package-macos.sh build dist/ScreenFrame-0.1.2-macOS-arm64.dmg` after building.

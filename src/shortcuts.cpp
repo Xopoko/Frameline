@@ -6,6 +6,7 @@
 #include <array>
 
 #if defined(Q_OS_WIN)
+#include "platform/windows_shortcuts.h"
 #include <QAbstractNativeEventFilter>
 #include <qt_windows.h>
 #elif defined(Q_OS_MACOS)
@@ -24,7 +25,31 @@
 
 namespace {
 const auto unavailable = QT_TRANSLATE_NOOP("GlobalShortcuts",
-    "Не удалось зарегистрировать все сочетания клавиш. Снимок можно сделать из окна приложения.");
+    "Some shortcuts could not be registered. You can still capture from the ScreenFrame window.");
+
+#if defined(Q_OS_MACOS)
+bool systemUsesRegionShortcut()
+{
+    CFArrayRef shortcuts = nullptr;
+    if (CopySymbolicHotKeys(&shortcuts) != noErr || !shortcuts)
+        return false;
+
+    bool enabled = false;
+    for (CFIndex i = 0; i < CFArrayGetCount(shortcuts) && !enabled; ++i) {
+        const auto shortcut = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(shortcuts, i));
+        const auto key = static_cast<CFNumberRef>(CFDictionaryGetValue(shortcut, kHISymbolicHotKeyCode));
+        const auto modifiers = static_cast<CFNumberRef>(CFDictionaryGetValue(shortcut, kHISymbolicHotKeyModifiers));
+        int keyCode = 0;
+        int modifierMask = 0;
+        enabled = CFDictionaryGetValue(shortcut, kHISymbolicHotKeyEnabled) == kCFBooleanTrue
+            && key && CFNumberGetValue(key, kCFNumberIntType, &keyCode) && keyCode == kVK_ANSI_5
+            && modifiers && CFNumberGetValue(modifiers, kCFNumberIntType, &modifierMask)
+            && modifierMask == (cmdKey | shiftKey);
+    }
+    CFRelease(shortcuts);
+    return enabled;
+}
+#endif
 
 #if defined(Q_OS_LINUX)
 const auto shortcutsInterface = QStringLiteral("org.freedesktop.portal.GlobalShortcuts");
@@ -106,10 +131,10 @@ private:
                      this, SLOT(closed()));
 
         const ShortcutList keys{
-            {fullId, {{QStringLiteral("description"), tr("Снимок экрана")},
+            {fullId, {{QStringLiteral("description"), tr("Capture screen")},
                       {QStringLiteral("preferred_trigger"), QStringLiteral("CTRL+ALT+SHIFT+1")}}},
-            {regionId, {{QStringLiteral("description"), tr("Снимок области")},
-                        {QStringLiteral("preferred_trigger"), QStringLiteral("CTRL+ALT+SHIFT+2")}}}
+            {regionId, {{QStringLiteral("description"), tr("Capture region")},
+                        {QStringLiteral("preferred_trigger"), QStringLiteral("LOGO+s")}}}
         };
         auto* request = new Portal::Request(this);
         connect(request, &Portal::Request::failed, this, &PortalShortcuts::unavailable);
@@ -146,8 +171,8 @@ private:
 
     QString fallback() const
     {
-        return tr("В настройках клавиатуры Wayland можно назначить свои сочетания для "
-                  "команд screenframe capture full и screenframe capture region.");
+        return tr("In your desktop keyboard settings, assign Super+S to "
+                  "screenframe capture region. Free the shortcut first if it is already in use.");
     }
 
     GlobalShortcuts& owner_;
@@ -196,16 +221,19 @@ public:
             }
             return 0;
         };
-        keycodes_ = {keycode(XK_1), keycode(XK_2)};
+        keycodes_ = {keycode(XK_1), keycode(XK_s)};
         const auto numLock = keycode(XK_Num_Lock);
         const auto scrollLock = keycode(XK_Scroll_Lock);
         const auto leftAlt = keycode(XK_Alt_L);
         const auto rightAlt = keycode(XK_Alt_R);
+        const auto leftSuper = keycode(XK_Super_L);
+        const auto rightSuper = keycode(XK_Super_R);
         const auto modCookie = xcb_get_modifier_mapping(connection_);
         const std::unique_ptr<xcb_get_modifier_mapping_reply_t, decltype(&std::free)> modifiers(
             xcb_get_modifier_mapping_reply(connection_, modCookie, nullptr), &std::free);
         uint16_t locks = XCB_MOD_MASK_LOCK;
         uint16_t alt = 0;
+        uint16_t super = 0;
         if (modifiers) {
             const auto* keys = xcb_get_modifier_mapping_keycodes(modifiers.get());
             for (int i = 0; i < 8 * modifiers->keycodes_per_modifier; ++i) {
@@ -216,33 +244,44 @@ public:
                     locks |= mask;
                 if (keys[i] == leftAlt || keys[i] == rightAlt)
                     alt |= mask;
+                if (keys[i] == leftSuper || keys[i] == rightSuper)
+                    super |= mask;
             }
         }
         if (!alt)
             alt = XCB_MOD_MASK_1;
-        for (uint16_t mask = locks;; mask = (mask - 1) & locks) {
-            for (uint16_t modifier = 1; modifier <= alt; modifier <<= 1) {
-                if (alt & modifier)
-                    masks_.append(mask | XCB_MOD_MASK_CONTROL | modifier | XCB_MOD_MASK_SHIFT);
-            }
-            if (!mask)
-                break;
-        }
+        if (!super)
+            super = XCB_MOD_MASK_4;
+        masks_[0] = combinations(alt, XCB_MOD_MASK_CONTROL | XCB_MOD_MASK_SHIFT, locks);
+        masks_[1] = combinations(super, 0, locks);
 
-        const std::array registered{grab(keycodes_[0]), grab(keycodes_[1])};
+        const std::array registered{grab(keycodes_[0], masks_[0]), grab(keycodes_[1], masks_[1])};
         notifier_ = std::make_unique<QSocketNotifier>(xcb_get_file_descriptor(connection_), QSocketNotifier::Read);
         QObject::connect(notifier_.get(), &QSocketNotifier::activated, &owner_, [this] { process(); });
         return registered;
     }
 
 private:
-    bool grab(xcb_keycode_t key)
+    static QList<uint16_t> combinations(uint16_t modifiers, uint16_t required, uint16_t locks)
+    {
+        QList<uint16_t> result;
+        for (uint16_t mask = locks;; mask = (mask - 1) & locks) {
+            for (uint16_t bit = 1; bit <= modifiers; bit <<= 1) {
+                if (modifiers & bit)
+                    result.append(mask | required | bit);
+            }
+            if (!mask)
+                return result;
+        }
+    }
+
+    bool grab(xcb_keycode_t key, const QList<uint16_t>& masks)
     {
         if (!key)
             return false;
         QList<xcb_void_cookie_t> requests;
         for (const auto root : roots_) {
-            for (const auto modifiers : masks_) {
+            for (const auto modifiers : masks) {
                 requests.append(xcb_grab_key_checked(connection_, false, root, modifiers, key,
                                                      XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC));
             }
@@ -256,7 +295,7 @@ private:
         }
         if (!succeeded) {
             for (const auto root : roots_) {
-                for (const auto modifiers : masks_)
+                for (const auto modifiers : masks)
                     xcb_ungrab_key(connection_, key, root, modifiers);
             }
             xcb_flush(connection_);
@@ -275,7 +314,7 @@ private:
                         continue;
                     if (type == XCB_KEY_RELEASE)
                         releaseTime_[i] = key->time;
-                    else if (releaseTime_[i] != key->time && masks_.contains(key->state & 0xff))
+                    else if (releaseTime_[i] != key->time && masks_[i].contains(key->state & 0xff))
                         emit owner_.captureRequested(i == 1);
                 }
             }
@@ -288,7 +327,7 @@ private:
     GlobalShortcuts& owner_;
     xcb_connection_t* connection_;
     QList<xcb_window_t> roots_;
-    QList<uint16_t> masks_;
+    std::array<QList<uint16_t>, 2> masks_;
     std::array<xcb_keycode_t, 2> keycodes_{};
     std::array<xcb_timestamp_t, 2> releaseTime_{};
     std::unique_ptr<QSocketNotifier> notifier_;
@@ -309,7 +348,6 @@ public:
         if (started_) {
             QCoreApplication::instance()->removeNativeEventFilter(this);
             UnregisterHotKey(nullptr, 1);
-            UnregisterHotKey(nullptr, 2);
         }
 #elif defined(Q_OS_MACOS)
         for (const auto key : keys_) {
@@ -331,7 +369,8 @@ public:
         QCoreApplication::instance()->installNativeEventFilter(this);
         constexpr auto modifiers = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
         registered[0] = RegisterHotKey(nullptr, 1, modifiers, '1');
-        registered[1] = RegisterHotKey(nullptr, 2, modifiers, '2');
+        regionShortcut_ = std::make_unique<WindowsRegionShortcut>([this] { emit owner_.captureRequested(true); });
+        registered[1] = regionShortcut_->start();
 #elif defined(Q_OS_MACOS)
         const EventTypeSpec events[] = {{kEventClassKeyboard, kEventHotKeyPressed},
                                         {kEventClassKeyboard, kEventHotKeyReleased}};
@@ -340,8 +379,10 @@ public:
             constexpr auto modifiers = cmdKey | optionKey | shiftKey;
             registered[0] = RegisterEventHotKey(kVK_ANSI_1, modifiers, {signature, 1},
                                                 target, 0, &keys_[0]) == noErr;
-            registered[1] = RegisterEventHotKey(kVK_ANSI_2, modifiers, {signature, 2},
-                                                target, 0, &keys_[1]) == noErr;
+            if (!systemUsesRegionShortcut()) {
+                registered[1] = RegisterEventHotKey(kVK_ANSI_5, cmdKey | shiftKey, {signature, 2},
+                                                    target, kEventHotKeyExclusive, &keys_[1]) == noErr;
+            }
         }
 #elif defined(Q_OS_LINUX)
         if (Portal::isWayland()) {
@@ -352,8 +393,17 @@ public:
         x11_ = std::make_unique<X11Shortcuts>(owner_);
         registered = x11_->start();
 #endif
-        emit owner_.statusChanged(registered[0], registered[1],
-                                  registered[0] && registered[1] ? QString{} : tr(unavailable));
+        QString warning;
+#if defined(Q_OS_MACOS)
+        if (!registered[1]) {
+            warning = tr("⌘⇧5 is unavailable. Disable Screenshot and recording options in System Settings → "
+                         "Keyboard → Keyboard Shortcuts → Screenshots, then restart ScreenFrame.");
+        }
+#endif
+        if (warning.isEmpty() && (!registered[0] || !registered[1])) {
+            warning = tr(unavailable);
+        }
+        emit owner_.statusChanged(registered[0], registered[1], warning);
     }
 
     QString description(bool region) const
@@ -366,23 +416,26 @@ public:
         }
 #endif
 #if defined(Q_OS_MACOS)
-        const auto modifiers = QStringLiteral("⌘⌥⇧");
+        return region ? QStringLiteral("⌘⇧5") : QStringLiteral("⌘⌥⇧1");
+#elif defined(Q_OS_WIN)
+        return region ? QStringLiteral("Win+S") : QStringLiteral("Ctrl+Alt+Shift+1");
 #else
-        const auto modifiers = QStringLiteral("Ctrl+Alt+Shift+");
+        return region ? QStringLiteral("Super+S") : QStringLiteral("Ctrl+Alt+Shift+1");
 #endif
-        return modifiers + (region ? u'2' : u'1');
     }
 
 private:
 #if defined(Q_OS_WIN)
+    std::unique_ptr<WindowsRegionShortcut> regionShortcut_;
+
     bool nativeEventFilter(const QByteArray&, void* message, qintptr* result) override
     {
         const auto* event = static_cast<MSG*>(message);
-        if (event->message != WM_HOTKEY || (event->wParam != 1 && event->wParam != 2))
+        if (event->message != WM_HOTKEY || event->wParam != 1)
             return false;
         if (result)
             *result = 0;
-        emit owner_.captureRequested(event->wParam == 2);
+        emit owner_.captureRequested(false);
         return true;
     }
 #elif defined(Q_OS_MACOS)

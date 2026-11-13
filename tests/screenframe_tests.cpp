@@ -5,6 +5,10 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 
+#if defined(Q_OS_WIN)
+#include "platform/windows_shortcuts.h"
+#endif
+
 namespace {
 
 bool check(bool condition, const char *message)
@@ -102,6 +106,28 @@ bool pngExport()
     return passed;
 }
 
+#if defined(Q_OS_WIN)
+bool windowsRegionKey()
+{
+    using Decision = WindowsRegionKeyState::Decision;
+    WindowsRegionKeyState key;
+    bool passed = check(key.onS(true, true) == Decision::Capture, "Win+S must trigger region capture.");
+    passed &= check(key.onS(true, true) == Decision::Suppress, "Holding Win+S must suppress repeats.");
+    passed &= check(key.onS(true, false) == Decision::Suppress && key.onS(false, false) == Decision::Suppress,
+                    "Releasing Win first must keep the matching S repeat and key-up suppressed.");
+    passed &= check(key.onS(true, false) == Decision::Pass && key.onS(true, true) == Decision::Pass
+                    && key.onS(false, true) == Decision::Pass,
+                    "A key held before Win must pass through until released.");
+    passed &= check(key.onS(true, true) == Decision::Capture && key.onS(false, true) == Decision::Suppress,
+                    "A fresh Win+S press must trigger again when Win remains held.");
+
+    WindowsRegionKeyState heldAtStart(true);
+    passed &= check(heldAtStart.onS(true, true) == Decision::Pass && heldAtStart.onS(false, true) == Decision::Pass,
+                    "A key held while starting the hook must finish without interception.");
+    return passed;
+}
+#endif
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -110,5 +136,10 @@ int main(int argc, char **argv)
     const bool annotationsPassed = annotationRendering();
     const bool damagePassed = annotationDamage();
     const bool exportPassed = pngExport();
-    return annotationsPassed && damagePassed && exportPassed ? 0 : 1;
+#if defined(Q_OS_WIN)
+    const bool shortcutPassed = windowsRegionKey();
+#else
+    const bool shortcutPassed = true;
+#endif
+    return annotationsPassed && damagePassed && exportPassed && shortcutPassed ? 0 : 1;
 }

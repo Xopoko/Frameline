@@ -67,8 +67,8 @@ void captureMacScreens(ScreenCapture* capture, const QList<QScreen*>& screens)
 {
     if (!CGPreflightScreenCaptureAccess() && !CGRequestScreenCaptureAccess()) {
         emit capture->failed(ScreenCapture::tr(
-            "Разрешите ScreenFrame запись экрана в Системных настройках → "
-            "Конфиденциальность и безопасность, затем перезапустите приложение."));
+            "Allow ScreenFrame in System Settings → Privacy & Security → Screen & System Audio Recording, "
+            "then restart the app."));
         return;
     }
 
@@ -120,7 +120,7 @@ void captureMacScreens(ScreenCapture* capture, const QList<QScreen*>& screens)
                 if (!owner)
                     return;
                 if (capturedFrames.isEmpty())
-                    emit owner->failed(ScreenCapture::tr("Не удалось сделать снимок экрана в macOS."));
+                    emit owner->failed(ScreenCapture::tr("Could not capture the screen on macOS."));
                 else
                     emit owner->captured(capturedFrames);
             }, Qt::QueuedConnection);
