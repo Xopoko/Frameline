@@ -6,7 +6,7 @@
 
 - **Windows 10/11 x64.** Распакуйте ZIP и откройте `bin/ScreenFrameGUI.exe`. Рядом находится CLI `bin/screenframe.exe`.
 - **macOS 14.4+, Apple Silicon.** Перетащите `ScreenFrame.app` из DMG в «Программы». При первом захвате разрешите запись экрана в «Системные настройки» → «Конфиденциальность и безопасность», затем перезапустите приложение. У локальной сборки подпись ad hoc.
-- **Ubuntu 24.04+ amd64.** Установите `sudo apt install ./screenframe_0.1.0_amd64.deb` и откройте ScreenFrame из меню приложений.
+- **Ubuntu 24.04+ amd64.** Установите `sudo apt install ./screenframe_0.1.1_amd64.deb` и откройте ScreenFrame из меню приложений.
 
 | Действие | Windows и Ubuntu | macOS |
 | --- | --- | --- |
@@ -54,3 +54,5 @@ ctest --test-dir build --output-on-failure
 ```
 
 `cmake --install build --prefix <абсолютный-путь>` собирает каталог приложения с Qt на Windows и macOS. На Ubuntu `cpack --config build/CPackConfig.cmake -B dist` создаёт DEB.
+
+Для компактного DMG используйте официальный SDK Qt для macOS. После сборки с `-DCMAKE_OSX_ARCHITECTURES=arm64` выполните `bash scripts/package-macos.sh build dist/ScreenFrame-0.1.1-macOS-arm64.dmg`.

@@ -1,5 +1,6 @@
 #include "application.h"
 
+#include "pngexport.h"
 #include "regionselector.h"
 
 #include <QApplication>
@@ -10,20 +11,23 @@
 
 #include <utility>
 
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#include <dwmapi.h>
+#endif
+
 ScreenFrameApplication::ScreenFrameApplication(LaunchOptions options)
     : m_options(std::move(options))
 {
-    connect(&m_editor, &EditorWindow::fullCaptureRequested, this, [this] { beginCapture(false); });
-    connect(&m_editor, &EditorWindow::regionCaptureRequested, this, [this] { beginCapture(true); });
-    connect(&m_shortcuts, &GlobalShortcuts::captureRequested, this, &ScreenFrameApplication::beginCapture);
+    connect(&m_shortcuts, &GlobalShortcuts::captureRequested, this, [this](bool region) { beginCapture(region); });
     connect(&m_shortcuts, &GlobalShortcuts::statusChanged, this, &ScreenFrameApplication::refreshShortcuts);
     connect(&m_capture, &ScreenCapture::failed, this, &ScreenFrameApplication::failCapture);
     connect(&m_capture, &ScreenCapture::portalPermissionRequired, this, &ScreenFrameApplication::requestPortalPermission);
     connect(&m_capture, &ScreenCapture::cancelled, this, [this] { finishCapture({}); });
     connect(&m_capture, &ScreenCapture::captured, this, [this](const QList<CaptureFrame> &frames) {
         if (std::exchange(m_portalAuthorizing, false)) {
-            m_editor.hide();
-            QTimer::singleShot(180, this, [this] { m_capture.capture(m_region); });
+            m_editor->hide();
+            captureAfterHiding(true);
             return;
         }
         if (!m_region || frames.isEmpty()) {
@@ -47,20 +51,21 @@ void ScreenFrameApplication::start()
         QApplication::setQuitOnLastWindowClosed(false);
         m_tray.setIcon(QApplication::windowIcon());
         m_tray.setToolTip(QStringLiteral("ScreenFrame"));
-        m_trayMenu.addAction(QStringLiteral("Открыть ScreenFrame"), this, &ScreenFrameApplication::showEditor);
-        m_trayMenu.addSeparator();
-        m_trayMenu.addAction(QStringLiteral("Снять экран"), this, [this] { beginCapture(false); });
-        m_trayMenu.addAction(QStringLiteral("Снять область"), this, [this] { beginCapture(true); });
-        m_trayMenu.addSeparator();
-        m_trayMenu.addAction(QStringLiteral("Выйти"), this, [this] {
-            if (!m_editor.isVisible() && m_editor.hasUnsavedChanges()) {
+        m_trayMenu = std::make_unique<QMenu>();
+        m_trayMenu->addAction(QStringLiteral("Открыть ScreenFrame"), this, &ScreenFrameApplication::showEditor);
+        m_trayMenu->addSeparator();
+        m_trayMenu->addAction(QStringLiteral("Снять экран"), this, [this] { beginCapture(false, true); });
+        m_trayMenu->addAction(QStringLiteral("Снять область"), this, [this] { beginCapture(true, true); });
+        m_trayMenu->addSeparator();
+        m_trayMenu->addAction(QStringLiteral("Выйти"), this, [this] {
+            if (m_editor && !m_editor->isVisible() && m_editor->hasUnsavedChanges()) {
                 showEditor();
             }
-            if (m_editor.confirmReplace()) {
+            if (!m_editor || m_editor->confirmReplace()) {
                 QApplication::quit();
             }
         });
-        m_tray.setContextMenu(&m_trayMenu);
+        m_tray.setContextMenu(m_trayMenu.get());
         connect(&m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
             if (reason == QSystemTrayIcon::Trigger) {
                 showEditor();
@@ -69,10 +74,21 @@ void ScreenFrameApplication::start()
         m_tray.show();
     }
 
+    m_shortcuts.start();
     if (!m_options.trayOnly || !m_tray.isVisible()) {
         showEditor();
     }
-    m_shortcuts.start();
+}
+
+EditorWindow &ScreenFrameApplication::editor()
+{
+    if (!m_editor) {
+        m_editor = std::make_unique<EditorWindow>();
+        m_editor->setShortcuts(m_fullShortcut, m_regionShortcut, m_shortcutMessage);
+        connect(m_editor.get(), &EditorWindow::fullCaptureRequested, this, [this] { beginCapture(false); });
+        connect(m_editor.get(), &EditorWindow::regionCaptureRequested, this, [this] { beginCapture(true); });
+    }
+    return *m_editor;
 }
 
 void ScreenFrameApplication::showEditor()
@@ -80,12 +96,13 @@ void ScreenFrameApplication::showEditor()
     if (m_busy) {
         return;
     }
-    m_editor.showNormal();
-    m_editor.raise();
-    m_editor.activateWindow();
+    auto &window = editor();
+    window.showNormal();
+    window.raise();
+    window.activateWindow();
 }
 
-void ScreenFrameApplication::beginCapture(bool region)
+void ScreenFrameApplication::beginCapture(bool region, bool fromTrayMenu)
 {
     if (m_busy) {
         return;
@@ -94,21 +111,53 @@ void ScreenFrameApplication::beginCapture(bool region)
     m_busy = true;
     m_region = region;
     m_portalAuthorizationAttempted = false;
-    m_restoreEditor = m_editor.isVisible();
-    if (m_editor.hasUnsavedChanges()) {
-        m_editor.showNormal();
-        m_editor.raise();
-        m_editor.activateWindow();
-        if (!m_editor.confirmReplace()) {
+    m_restoreEditor = m_editor && m_editor->isVisible();
+    if (m_editor && m_editor->hasUnsavedChanges()) {
+        m_editor->showNormal();
+        m_editor->raise();
+        m_editor->activateWindow();
+        if (!m_editor->confirmReplace()) {
             m_busy = false;
             return;
         }
     }
 
-    m_editor.hide();
-    // Let the compositor remove our window and the tray menu before reading the screen.
-    QTimer::singleShot(m_options.mode == LaunchOptions::Mode::Desktop || m_previewOpened ? 180 : 0,
-                       this, [this] { m_capture.capture(m_region); });
+    const bool surfaceWasVisible = fromTrayMenu || (m_trayMenu && m_trayMenu->isVisible())
+        || (m_editor && m_editor->isVisible() && !m_editor->isMinimized());
+    if (m_editor) {
+        m_editor->hide();
+    }
+    if (m_trayMenu) {
+        m_trayMenu->hide();
+    }
+    captureAfterHiding(surfaceWasVisible);
+}
+
+void ScreenFrameApplication::captureAfterHiding(bool surfaceWasVisible)
+{
+    const auto capture = [this] { m_capture.capture(m_region); };
+#ifdef Q_OS_MACOS
+    // ScreenCaptureKit filters out ScreenFrame even while its windows are being hidden.
+    Q_UNUSED(surfaceWasVisible);
+    QTimer::singleShot(0, this, capture);
+#else
+    constexpr int compositorDelayMs = 180;
+    if (!surfaceWasVisible) {
+        QTimer::singleShot(0, this, capture);
+        return;
+    }
+#ifdef Q_OS_WIN
+    QTimer::singleShot(0, this, [this, capture] {
+        if (SUCCEEDED(DwmFlush())) {
+            capture();
+        } else {
+            QTimer::singleShot(compositorDelayMs, this, capture);
+        }
+    });
+#else
+    QTimer::singleShot(compositorDelayMs, this, capture);
+#endif
+#endif
 }
 
 void ScreenFrameApplication::finishCapture(QImage image)
@@ -141,7 +190,7 @@ void ScreenFrameApplication::finishCapture(QImage image)
 
     m_restoreEditor = false;
     image.setDevicePixelRatio(1);
-    m_editor.setCapture(image);
+    editor().setCapture(image);
     showEditor();
     m_previewOpened = true;
     if (!desktop) {
@@ -163,7 +212,7 @@ void ScreenFrameApplication::failCapture(const QString &message)
     }
 
     showEditor();
-    QMessageBox::warning(&m_editor, QStringLiteral("Не удалось сделать скриншот"), message);
+    QMessageBox::warning(m_editor.get(), QStringLiteral("Не удалось сделать скриншот"), message);
 }
 
 void ScreenFrameApplication::requestPortalPermission(const QString &message)
@@ -173,24 +222,25 @@ void ScreenFrameApplication::requestPortalPermission(const QString &message)
         return;
     }
 
-    m_editor.showNormal();
-    m_editor.raise();
-    m_editor.activateWindow();
+    auto &window = editor();
+    window.showNormal();
+    window.raise();
+    window.activateWindow();
     QMessageBox dialog(QMessageBox::Question, QStringLiteral("Разрешение на захват экрана"), message,
-                       QMessageBox::NoButton, &m_editor);
+                       QMessageBox::NoButton, &window);
     dialog.setInformativeText(QStringLiteral("ScreenFrame повторит запрос с открытым окном. "
                                               "После подтверждения окно скроется и будет сделан новый снимок."));
     const auto *retry = dialog.addButton(QStringLiteral("Запросить доступ"), QMessageBox::AcceptRole);
     dialog.addButton(QMessageBox::Cancel);
     dialog.exec();
     if (dialog.clickedButton() != retry) {
-        m_editor.hide();
+        window.hide();
         finishCapture({});
         return;
     }
 
     m_portalAuthorizing = true;
-    QTimer::singleShot(180, this, [this] { m_capture.capture(m_region, &m_editor); });
+    QTimer::singleShot(180, this, [this] { m_capture.capture(m_region, m_editor.get()); });
 }
 
 void ScreenFrameApplication::restoreEditor()
@@ -202,6 +252,10 @@ void ScreenFrameApplication::restoreEditor()
 
 void ScreenFrameApplication::refreshShortcuts(bool full, bool region, const QString &message)
 {
-    m_editor.setShortcuts(full ? m_shortcuts.description(false) : QString{},
-                          region ? m_shortcuts.description(true) : QString{}, message);
+    m_fullShortcut = full ? m_shortcuts.description(false) : QString{};
+    m_regionShortcut = region ? m_shortcuts.description(true) : QString{};
+    m_shortcutMessage = message;
+    if (m_editor) {
+        m_editor->setShortcuts(m_fullShortcut, m_regionShortcut, m_shortcutMessage);
+    }
 }

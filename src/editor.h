@@ -7,8 +7,6 @@
 class QImage;
 class QShowEvent;
 
-bool savePng(const QImage &image, const QString &path, QString *error);
-
 class EditorWindow final : public QMainWindow {
     Q_OBJECT
 

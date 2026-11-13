@@ -19,6 +19,7 @@ struct Annotation {
     QVector<QPointF> points;
 
     QRectF bounds() const;
+    QRect affectedPixels() const;
     bool hasMark() const;
 };
 

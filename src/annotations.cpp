@@ -6,44 +6,71 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace screenframe {
 namespace {
 
-// A running window keeps the work proportional to the number of pixels, even for large blurs.
-void boxPass(const QImage &source, QImage &target, int radius, bool horizontal)
-{
-    const int length = horizontal ? source.width() : source.height();
-    const int lines = horizontal ? source.height() : source.width();
-    const int diameter = radius * 2 + 1;
-    const auto *input = reinterpret_cast<const QRgb *>(source.constBits());
-    auto *output = reinterpret_cast<QRgb *>(target.bits());
-    const int sourcePitch = source.bytesPerLine() / sizeof(QRgb);
-    const int targetPitch = target.bytesPerLine() / sizeof(QRgb);
-    const int sourceLine = horizontal ? sourcePitch : 1;
-    const int sourceStep = horizontal ? 1 : sourcePitch;
-    const int targetLine = horizontal ? targetPitch : 1;
-    const int targetStep = horizontal ? 1 : targetPitch;
+constexpr int blurRadius = 15;
+constexpr int blurDiameter = blurRadius * 2 + 1;
 
-    for (int line = 0; line < lines; ++line) {
-        const QRgb *in = input + line * sourceLine;
-        QRgb *out = output + line * targetLine;
-        int red = 0, green = 0, blue = 0, alpha = 0;
-        auto accumulate = [&](int offset, int sign) {
-            const QRgb pixel = in[std::clamp(offset, 0, length - 1) * sourceStep];
-            red += sign * qRed(pixel);
-            green += sign * qGreen(pixel);
-            blue += sign * qBlue(pixel);
-            alpha += sign * qAlpha(pixel);
-        };
-        for (int offset = -radius; offset <= radius; ++offset) {
-            accumulate(offset, 1);
+// Keep the channels in separate 16-bit lanes. A 31-pixel sum fits in each lane.
+quint64 expandChannels(QRgb pixel)
+{
+    constexpr quint64 mask = 0x00ff00ff;
+    return (pixel & mask) | (((pixel >> 8) & mask) << 32);
+}
+
+QRgb averageChannels(quint64 sum)
+{
+    return qRgba(((sum >> 16) & 0xffff) / blurDiameter,
+                 ((sum >> 32) & 0xffff) / blurDiameter,
+                 (sum & 0xffff) / blurDiameter,
+                 (sum >> 48) / blurDiameter);
+}
+
+void blurRows(const QImage &source, QImage &target)
+{
+    const int width = source.width();
+    for (int y = 0; y < source.height(); ++y) {
+        const auto *in = reinterpret_cast<const QRgb *>(source.constScanLine(y));
+        auto *out = reinterpret_cast<QRgb *>(target.scanLine(y));
+        quint64 sum = expandChannels(in[0]) * (blurRadius + 1);
+        for (int x = 1; x <= blurRadius; ++x) {
+            sum += expandChannels(in[std::min(x, width - 1)]);
         }
-        for (int index = 0; index < length; ++index) {
-            out[index * targetStep] = qRgba(red / diameter, green / diameter,
-                                            blue / diameter, alpha / diameter);
-            accumulate(index - radius, -1);
-            accumulate(index + radius + 1, 1);
+        for (int x = 0; x < width; ++x) {
+            out[x] = averageChannels(sum);
+            sum += expandChannels(in[std::min(x + blurRadius + 1, width - 1)]);
+            sum -= expandChannels(in[std::max(x - blurRadius, 0)]);
+        }
+    }
+}
+
+void blurColumns(const QImage &source, QImage &target, std::vector<quint64> &sums)
+{
+    const int width = source.width();
+    const int last = source.height() - 1;
+    const auto *first = reinterpret_cast<const QRgb *>(source.constScanLine(0));
+    for (int x = 0; x < width; ++x) {
+        sums[x] = expandChannels(first[x]) * (blurRadius + 1);
+    }
+    for (int y = 1; y <= blurRadius; ++y) {
+        const auto *row = reinterpret_cast<const QRgb *>(source.constScanLine(std::min(y, last)));
+        for (int x = 0; x < width; ++x) {
+            sums[x] += expandChannels(row[x]);
+        }
+    }
+    // Walk rows in memory order instead of stepping by the full image stride per pixel.
+    auto *sum = sums.data();
+    for (int y = 0; y <= last; ++y) {
+        const auto *entering = reinterpret_cast<const QRgb *>(source.constScanLine(std::min(y + blurRadius + 1, last)));
+        const auto *leaving = reinterpret_cast<const QRgb *>(source.constScanLine(std::max(y - blurRadius, 0)));
+        auto *out = reinterpret_cast<QRgb *>(target.scanLine(y));
+        for (int x = 0; x < width; ++x) {
+            const quint64 current = sum[x];
+            out[x] = averageChannels(current);
+            sum[x] = current + expandChannels(entering[x]) - expandChannels(leaving[x]);
         }
     }
 }
@@ -58,10 +85,10 @@ QImage blurredRegion(const QImage &image, const QRect &area)
     if (pass.isNull()) {
         return {};
     }
-    constexpr int radius = 15;
+    std::vector<quint64> sums(pixels.width());
     for (int repeat = 0; repeat < 3; ++repeat) {
-        boxPass(pixels, pass, radius, true);
-        boxPass(pass, pixels, radius, false);
+        blurRows(pixels, pass);
+        blurColumns(pass, pixels, sums);
     }
     return pixels;
 }
@@ -96,6 +123,31 @@ QRectF Annotation::bounds() const
         return {};
     }
     return QRectF(points.first(), points.last()).normalized();
+}
+
+QRect Annotation::affectedPixels() const
+{
+    if (!hasMark()) {
+        return {};
+    }
+    if (tool == Tool::Blur || tool == Tool::Redact) {
+        return bounds().toAlignedRect();
+    }
+
+    QRectF area = bounds();
+    if (tool == Tool::Pen) {
+        QPointF topLeft = points.first();
+        QPointF bottomRight = topLeft;
+        for (const QPointF &point : points) {
+            topLeft.setX(std::min(topLeft.x(), point.x()));
+            topLeft.setY(std::min(topLeft.y(), point.y()));
+            bottomRight.setX(std::max(bottomRight.x(), point.x()));
+            bottomRight.setY(std::max(bottomRight.y(), point.y()));
+        }
+        area = QRectF(topLeft, bottomRight);
+    }
+    const qreal margin = (tool == Tool::Arrow ? std::max(10.0, width * 3.5) : width) / 2 + 2;
+    return area.adjusted(-margin, -margin, margin, margin).toAlignedRect();
 }
 
 bool Annotation::hasMark() const
@@ -163,12 +215,12 @@ void applyAnnotation(QImage &image, const Annotation &annotation)
     if (image.isNull() || !annotation.hasMark()) {
         return;
     }
-    if (image.format() != QImage::Format_ARGB32_Premultiplied) {
-        image.convertTo(QImage::Format_ARGB32_Premultiplied);
+    if (image.format() != QImage::Format_ARGB32_Premultiplied && image.format() != QImage::Format_RGB32) {
+        image.convertTo(image.hasAlphaChannel() ? QImage::Format_ARGB32_Premultiplied : QImage::Format_RGB32);
     }
     image.setDevicePixelRatio(1);
     if (annotation.tool == Tool::Blur) {
-        const QRect area = annotation.bounds().toAlignedRect().intersected(image.rect());
+        const QRect area = annotation.affectedPixels().intersected(image.rect());
         if (area.isEmpty()) {
             return;
         }

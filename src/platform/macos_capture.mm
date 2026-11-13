@@ -74,9 +74,17 @@ void captureMacScreens(ScreenCapture* capture, const QList<QScreen*>& screens)
 
     const auto displays = matchDisplays(screens);
     const auto application = QCoreApplication::instance();
+    const auto processId = QCoreApplication::applicationPid();
     const QPointer<ScreenCapture> owner(capture);
     [SCShareableContent getShareableContentExcludingDesktopWindows:NO onScreenWindowsOnly:YES
                                                  completionHandler:^(SCShareableContent* content, NSError*) {
+        NSArray<SCRunningApplication*>* excludedApplications = @[];
+        for (SCRunningApplication* app in content.applications) {
+            if (app.processID == processId) {
+                excludedApplications = @[app];
+                break;
+            }
+        }
         const auto queue = dispatch_group_create();
         const auto resultsQueue = dispatch_queue_create("screenframe.capture", DISPATCH_QUEUE_SERIAL);
         __block QList<CaptureFrame> frames;
@@ -84,7 +92,9 @@ void captureMacScreens(ScreenCapture* capture, const QList<QScreen*>& screens)
             for (SCDisplay* source in content.displays) {
                 if (source.displayID != display.id)
                     continue;
-                const auto filter = [[SCContentFilter alloc] initWithDisplay:source excludingWindows:@[]];
+                const auto filter = [[SCContentFilter alloc] initWithDisplay:source
+                                                     excludingApplications:excludedApplications
+                                                          exceptingWindows:@[]];
                 const auto config = [SCStreamConfiguration new];
                 config.width = qRound(filter.contentRect.size.width * filter.pointPixelScale);
                 config.height = qRound(filter.contentRect.size.height * filter.pointPixelScale);

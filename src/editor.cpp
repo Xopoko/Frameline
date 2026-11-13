@@ -1,6 +1,7 @@
 #include "editor.h"
 
 #include "annotations.h"
+#include "pngexport.h"
 
 #include <QApplication>
 #include <QButtonGroup>
@@ -11,7 +12,6 @@
 #include <QFileDialog>
 #include <QFrame>
 #include <QHBoxLayout>
-#include <QImageWriter>
 #include <QHideEvent>
 #include <QKeySequence>
 #include <QLabel>
@@ -22,7 +22,6 @@
 #include <QPolygonF>
 #include <QPushButton>
 #include <QResizeEvent>
-#include <QSaveFile>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QShowEvent>
@@ -36,6 +35,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
+#include <deque>
 #include <functional>
 #include <optional>
 #include <utility>
@@ -163,10 +164,12 @@ public:
     {
         setCursor(Qt::CrossCursor);
         setFocusPolicy(Qt::StrongFocus);
+        setAttribute(Qt::WA_OpaquePaintEvent);
         setAccessibleName(QStringLiteral("Снимок экрана"));
     }
 
     QImage image;
+    bool opaque = false;
     Tool tool = Tool::Arrow;
     QColor color = QColor("#ff5373");
     qreal strokeWidth = 6;
@@ -175,9 +178,15 @@ public:
     void cancelStroke()
     {
         if (draft) {
+            const QRect damage = draftDamage();
             draft.reset();
-            update();
+            update(damage);
         }
+    }
+
+    void updatePixels(const QRect &area)
+    {
+        update(widgetDamage(area));
     }
 
 protected:
@@ -187,11 +196,13 @@ protected:
         QWidget::hideEvent(event);
     }
 
-    void paintEvent(QPaintEvent *) override
+    void paintEvent(QPaintEvent *event) override
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::SmoothPixmapTransform);
-        painter.fillRect(rect(), QColor("#111420"));
+        if (image.isNull() || !opaque) {
+            painter.fillRect(event->rect(), QColor("#111420"));
+        }
         if (image.isNull()) {
             return;
         }
@@ -220,14 +231,15 @@ protected:
         }
         const QColor markColor = tool == Tool::Redact ? QColor("#131522") : color;
         draft = Annotation{tool, markColor, strokeWidth, {imagePoint(event->position())}};
-        update();
+        update(draftDamage());
     }
 
     void mouseMoveEvent(QMouseEvent *event) override
     {
         if (draft) {
+            const QRect previous = draftDamage();
             extendStroke(event->position());
-            update();
+            update(previous.united(draftDamage()));
         }
     }
 
@@ -236,16 +248,34 @@ protected:
         if (event->button() != Qt::LeftButton || !draft) {
             return;
         }
+        const QRect previous = draftDamage();
         extendStroke(event->position());
         auto annotation = std::exchange(draft, std::nullopt);
         if (annotation->hasMark() && onCommit) {
             onCommit(std::move(*annotation));
         }
-        update();
+        update(previous);
     }
 
 private:
     std::optional<Annotation> draft;
+
+    QRect widgetDamage(const QRect &area) const
+    {
+        if (image.isNull() || area.isEmpty()) {
+            return {};
+        }
+        const qreal scaleX = qreal(width()) / image.width();
+        const qreal scaleY = qreal(height()) / image.height();
+        const QRectF mapped(area.x() * scaleX, area.y() * scaleY,
+                            area.width() * scaleX, area.height() * scaleY);
+        return mapped.toAlignedRect().adjusted(-2, -2, 2, 2);
+    }
+
+    QRect draftDamage() const
+    {
+        return widgetDamage(draft->affectedPixels());
+    }
 
     QPointF imagePoint(const QPointF &point) const
     {
@@ -354,25 +384,22 @@ constexpr auto editorStyles = R"(
     QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 )";
 
-}
+struct UndoPatch {
+    qsizetype index;
+    QPoint origin;
+    QImage pixels;
 
-bool savePng(const QImage &image, const QString &path, QString *error)
-{
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly)) {
-        *error = file.errorString();
-        return false;
+    QRect restore(QImage &image) const
+    {
+        // The working image stays in the same 32-bit format across an editing session.
+        for (int y = 0; y < pixels.height(); ++y) {
+            auto *out = image.scanLine(origin.y() + y) + origin.x() * sizeof(QRgb);
+            std::memcpy(out, pixels.constScanLine(y), pixels.width() * sizeof(QRgb));
+        }
+        return QRect(origin, pixels.size());
     }
-    QImageWriter writer(&file, "png");
-    if (!writer.write(image)) {
-        *error = writer.errorString();
-        return false;
-    }
-    if (!file.commit()) {
-        *error = file.errorString();
-        return false;
-    }
-    return true;
+};
+
 }
 
 struct EditorWindow::Ui {
@@ -425,6 +452,8 @@ struct EditorWindow::Ui {
     ScreenshotCanvas *canvas = nullptr;
     QImage source;
     QVector<Annotation> annotations;
+    std::deque<UndoPatch> undoPatches;
+    qsizetype undoBytes = 0;
     qsizetype historyCount = 0;
     qsizetype cleanCount = 0;
     qreal zoom = 1;
@@ -552,9 +581,7 @@ struct EditorWindow::Ui {
             }
             annotations.resize(historyCount);
             annotations.push_back(std::move(annotation));
-            ++historyCount;
-            screenframe::applyAnnotation(canvas->image, annotations.last());
-            refreshImage();
+            applyNextAnnotation();
         };
         body->addWidget(workspace, 1);
         layout->addLayout(body, 1);
@@ -720,7 +747,10 @@ struct EditorWindow::Ui {
     {
         image.setDevicePixelRatio(1);
         source = std::move(image);
+        canvas->opaque = !source.hasAlphaChannel();
         annotations.clear();
+        undoPatches.clear();
+        undoBytes = 0;
         historyCount = 0;
         cleanCount = 0;
         fit = true;
@@ -733,28 +763,62 @@ struct EditorWindow::Ui {
 
     void moveHistory(int step)
     {
-        const qsizetype count = std::clamp(historyCount + step, qsizetype(0), annotations.size());
-        if (count != historyCount) {
-            historyCount = count;
-            canvas->cancelStroke();
-            if (step < 0) {
-                updateImage();
+        canvas->cancelStroke();
+        if (step < 0 && historyCount > 0) {
+            --historyCount;
+            if (!undoPatches.empty() && undoPatches.back().index == historyCount) {
+                const UndoPatch &patch = undoPatches.back();
+                canvas->updatePixels(patch.restore(canvas->image));
+                undoBytes -= patch.pixels.sizeInBytes();
+                undoPatches.pop_back();
+                refreshImageControls();
             } else {
-                screenframe::applyAnnotation(canvas->image, annotations.at(historyCount - 1));
-                refreshImage();
+                updateImage();
+            }
+        } else if (step > 0 && historyCount < annotations.size()) {
+            applyNextAnnotation();
+        }
+    }
+
+    void applyNextAnnotation()
+    {
+        // Keep recent undos cheap without retaining a full-size image per edit.
+        // Older states are reconstructed from the original and the vector annotations.
+        constexpr qsizetype budget = 64 * 1024 * 1024;
+        constexpr size_t maxPatches = 128;
+        const Annotation &annotation = annotations.at(historyCount);
+        const QImage::Format format = canvas->opaque ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied;
+        if (canvas->image.format() != format) {
+            canvas->image.convertTo(format);
+        }
+        const QRect area = annotation.affectedPixels().intersected(canvas->image.rect());
+        const qint64 cost = qint64(area.width()) * area.height() * sizeof(QRgb);
+        if (cost > 0 && cost <= budget) {
+            while (!undoPatches.empty() && (undoBytes + cost > budget || undoPatches.size() >= maxPatches)) {
+                undoBytes -= undoPatches.front().pixels.sizeInBytes();
+                undoPatches.pop_front();
+            }
+            QImage pixels = canvas->image.copy(area);
+            if (!pixels.isNull()) {
+                undoBytes += pixels.sizeInBytes();
+                undoPatches.push_back({historyCount, area.topLeft(), std::move(pixels)});
             }
         }
+        screenframe::applyAnnotation(canvas->image, annotation);
+        ++historyCount;
+        canvas->updatePixels(area);
+        refreshImageControls();
     }
 
     void updateImage()
     {
         canvas->image = screenframe::renderAnnotations(source, annotations, historyCount);
-        refreshImage();
+        canvas->update();
+        refreshImageControls();
     }
 
-    void refreshImage()
+    void refreshImageControls()
     {
-        canvas->update();
         status->clear();
         refreshControls();
     }

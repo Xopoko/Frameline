@@ -4,7 +4,7 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 14.4 CACHE STRING "Minimum macOS version")
 endif()
 
-project(ScreenFrame VERSION 0.1.0 LANGUAGES CXX)
+project(ScreenFrame VERSION 0.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,6 +31,8 @@ add_library(screenframe_core STATIC
     src/capture.h
     src/editor.cpp
     src/editor.h
+    src/pngexport.cpp
+    src/pngexport.h
     src/regionselector.cpp
     src/regionselector.h
     src/shortcuts.cpp
@@ -40,7 +42,7 @@ target_include_directories(screenframe_core PUBLIC src)
 target_link_libraries(screenframe_core PUBLIC Qt6::Widgets)
 
 if(WIN32)
-    target_link_libraries(screenframe_core PRIVATE user32 shell32)
+    target_link_libraries(screenframe_core PRIVATE user32 shell32 gdi32 dwmapi)
 elseif(APPLE)
     enable_language(OBJCXX)
     set_target_properties(screenframe_core PROPERTIES OBJCXX_STANDARD 20 OBJCXX_STANDARD_REQUIRED ON)
@@ -87,10 +89,20 @@ install(TARGETS screenframe BUNDLE DESTINATION . RUNTIME DESTINATION ${CMAKE_INS
 if(WIN32 OR APPLE)
     if(WIN32)
         set(deploy_target ScreenFrameGUI)
+        if(Qt6_VERSION VERSION_GREATER_EQUAL 6.8)
+            set(deploy_options
+                --skip-plugin-types generic,imageformats,networkinformation,tls
+                --no-system-d3d-compiler --no-system-dxc-compiler --no-opengl-sw)
+        endif()
     else()
         set(deploy_target screenframe)
     endif()
-    qt_generate_deploy_app_script(TARGET ${deploy_target} OUTPUT_SCRIPT deploy_script)
+    if(deploy_options)
+        qt_generate_deploy_app_script(TARGET ${deploy_target} OUTPUT_SCRIPT deploy_script
+            DEPLOY_TOOL_OPTIONS ${deploy_options})
+    else()
+        qt_generate_deploy_app_script(TARGET ${deploy_target} OUTPUT_SCRIPT deploy_script)
+    endif()
     install(SCRIPT ${deploy_script})
 endif()
 

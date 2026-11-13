@@ -7,6 +7,8 @@
 #include <QMenu>
 #include <QSystemTrayIcon>
 
+#include <memory>
+
 struct LaunchOptions {
     enum class Mode { Desktop, Full, Region };
 
@@ -22,8 +24,10 @@ public:
     void start();
 
 private:
+    EditorWindow &editor();
     void showEditor();
-    void beginCapture(bool region);
+    void beginCapture(bool region, bool fromTrayMenu = false);
+    void captureAfterHiding(bool surfaceWasVisible);
     void finishCapture(QImage image);
     void failCapture(const QString &message);
     void requestPortalPermission(const QString &message);
@@ -33,9 +37,12 @@ private:
     LaunchOptions m_options;
     ScreenCapture m_capture;
     GlobalShortcuts m_shortcuts;
-    EditorWindow m_editor;
-    QMenu m_trayMenu;
+    std::unique_ptr<EditorWindow> m_editor;
+    std::unique_ptr<QMenu> m_trayMenu;
     QSystemTrayIcon m_tray;
+    QString m_fullShortcut;
+    QString m_regionShortcut;
+    QString m_shortcutMessage;
     bool m_busy = false;
     bool m_region = false;
     bool m_restoreEditor = false;

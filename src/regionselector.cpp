@@ -6,6 +6,7 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPaintEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QRegion>
@@ -14,6 +15,7 @@
 #include <QWidget>
 #include <QWindow>
 #include <QtMath>
+#include <QtNumeric>
 
 #include <algorithm>
 #include <utility>
@@ -95,11 +97,11 @@ public:
     void finish(QImage image = {});
 
     QRectF selection() const { return dragging_ ? QRectF(anchor_, cursor_).normalized() : QRectF(); }
-    QSize outputSize() const;
     bool dragging() const { return dragging_; }
-    bool showMeasurement(const Overlay *overlay) const;
 
 private:
+    friend class Overlay;
+
     struct Crop {
         const QImage *image;
         QRectF source;
@@ -108,8 +110,10 @@ private:
 
     QList<Crop> crops() const;
     QRectF outputBounds(const QList<Crop> &parts) const;
+    QSize outputSize() const;
     QImage cropImage() const;
     QPointF cursorPoint(const Overlay *overlay, const QMouseEvent &event) const;
+    void refreshOverlays();
 
     std::function<void(QImage)> done_;
     QList<Overlay *> overlays_;
@@ -179,10 +183,36 @@ public:
         }
     }
 
-    void setDragging(bool dragging)
+    void updateSelection(bool dragging, const QRectF &area, const QString &measurement)
     {
-        cancel_->setVisible(!dragging);
-        update();
+        const QRectF photo = viewport();
+        const QRectF selection = area.isEmpty() || photo.isEmpty() ? QRectF() : mapRect(area, layout_, photo);
+        const QRectF visible = selection.intersected(photo);
+        const QRectF badge = visible.isEmpty() || measurement.isEmpty() ? QRectF() : measurementRect(visible, measurement);
+
+        QRegion damage = QRegion(visible_.toAlignedRect()).xored(QRegion(visible.toAlignedRect()));
+        if (selection != selection_) {
+            damage += outline(selection_, photo);
+            damage += outline(selection, photo);
+        }
+        if (badge != badge_ || measurement != measurement_) {
+            if (!badge_.isEmpty())
+                damage += badge_.toAlignedRect().adjusted(-2, -2, 2, 2);
+            if (!badge.isEmpty())
+                damage += badge.toAlignedRect().adjusted(-2, -2, 2, 2);
+        }
+        if (dragging != dragging_) {
+            dragging_ = dragging;
+            cancel_->setVisible(!dragging);
+            damage += instructionsRect().toAlignedRect().adjusted(-2, -2, 2, 2);
+        }
+
+        selection_ = selection;
+        visible_ = visible;
+        badge_ = badge;
+        measurement_ = measurement;
+        if (!damage.isEmpty())
+            update(damage);
     }
 
 protected:
@@ -237,62 +267,111 @@ protected:
         QWidget::resizeEvent(event);
         cancel_->adjustSize();
         cancel_->move(std::max(8, width() - cancel_->width() - 24), 24);
+        if (dragging_)
+            session_->refreshOverlays();
     }
 
-    void paintEvent(QPaintEvent *) override
+    void paintEvent(QPaintEvent *event) override
     {
         QPainter painter(this);
-        painter.setRenderHint(QPainter::SmoothPixmapTransform);
-        painter.fillRect(rect(), backdrop);
+        painter.fillRect(event->rect(), backdrop);
         const QRectF photo = viewport();
         if (photo.isEmpty())
             return;
 
-        painter.drawImage(photo, image_);
-        const QRectF selection = session_->dragging() ? mapRect(session_->selection(), layout_, photo) : QRectF();
-        const QRectF visible = selection.intersected(photo);
+        drawPhoto(painter, photo);
 
         painter.save();
-        const QRegion dark = QRegion(photo.toAlignedRect()).subtracted(QRegion(visible.toAlignedRect()));
+        const QRegion dark = QRegion(photo.toAlignedRect()).subtracted(QRegion(visible_.toAlignedRect()));
         painter.setClipRegion(dark);
         painter.fillRect(photo, QColor(10, 13, 24, 148));
         painter.restore();
 
-        if (!session_->dragging()) {
+        if (!dragging_) {
             drawInstructions(painter);
-        } else if (!visible.isEmpty()) {
+        } else if (!visible_.isEmpty()) {
             painter.save();
             painter.setClipRect(photo);
             painter.setPen(QPen(QColor(17, 18, 35), 3));
-            painter.drawRect(selection);
+            painter.drawRect(selection_);
             painter.setPen(QPen(accent, 1));
-            painter.drawRect(selection);
+            painter.drawRect(selection_);
             painter.restore();
 
-            if (session_->showMeasurement(this)) {
-                const QSize pixels = session_->outputSize();
-                if (!pixels.isEmpty())
-                    drawMeasurement(painter, visible, pixels);
-            }
+            if (!badge_.isEmpty())
+                drawMeasurement(painter);
         }
     }
 
 private:
-    void drawInstructions(QPainter &painter) const
+    void drawPhoto(QPainter &painter, const QRectF &photo)
+    {
+        const qreal dpr = devicePixelRatioF();
+        const QSizeF pixels = photo.size() * dpr;
+        if (qFuzzyCompare(pixels.width(), qreal(image_.width()))
+            && qFuzzyCompare(pixels.height(), qreal(image_.height()))
+            && qFuzzyIsNull(photo.x() * dpr - qRound(photo.x() * dpr))
+            && qFuzzyIsNull(photo.y() * dpr - qRound(photo.y() * dpr))) {
+            painter.drawImage(photo, image_);
+            return;
+        }
+
+        // Rasterize a scaled frame once, using the complete viewport so rounding does not
+        // depend on which part of the backing store was damaged. Keep the original for crop.
+        if (preview_.isNull() || photo != previewPhoto_ || dpr != previewDpr_) {
+            const QRect pixelBounds = QRectF(photo.topLeft() * dpr, pixels).toAlignedRect();
+            preview_ = QImage(pixelBounds.size(), QImage::Format_ARGB32_Premultiplied);
+            preview_.setDevicePixelRatio(dpr);
+            previewOrigin_ = QPointF(pixelBounds.topLeft()) / dpr;
+            previewPhoto_ = photo;
+            previewDpr_ = dpr;
+            if (!preview_.isNull()) {
+                preview_.fill(Qt::transparent);
+                QPainter raster(&preview_);
+                raster.setRenderHint(QPainter::SmoothPixmapTransform);
+                raster.drawImage(photo.translated(-previewOrigin_), image_);
+            }
+        }
+
+        if (!preview_.isNull()) {
+            painter.drawImage(previewOrigin_, preview_);
+        } else {
+            painter.setRenderHint(QPainter::SmoothPixmapTransform);
+            painter.drawImage(photo, image_);
+        }
+    }
+
+    static QRegion outline(const QRectF &selection, const QRectF &photo)
+    {
+        if (selection.isEmpty())
+            return {};
+        // Include the full stroke, but exclude the unchanged interior from the damage.
+        const QRect outer = selection.toAlignedRect().adjusted(-3, -3, 3, 3);
+        const QRect inner = selection.toAlignedRect().adjusted(3, 3, -3, -3);
+        return QRegion(outer.intersected(photo.toAlignedRect())).subtracted(QRegion(inner));
+    }
+
+    QFont instructionTitleFont() const
     {
         QFont titleFont = font();
         titleFont.setBold(true);
         titleFont.setPointSizeF(10.5);
-        painter.setFont(titleFont);
-        const QString title = QStringLiteral("Выберите область");
-        const QString help = QStringLiteral("Нажмите и перетащите курсор");
-        const int titleWidth = painter.fontMetrics().horizontalAdvance(title);
-        const int helpWidth = QFontMetrics(font()).horizontalAdvance(help);
-        const QRectF badge(24, 24, std::max(titleWidth, helpWidth) + 57, 57);
+        return titleFont;
+    }
+
+    QRectF instructionsRect() const
+    {
+        const int titleWidth = QFontMetrics(instructionTitleFont()).horizontalAdvance(title_);
+        const int helpWidth = QFontMetrics(font()).horizontalAdvance(help_);
+        return QRectF(24, 24, std::max(titleWidth, helpWidth) + 57, 57);
+    }
+
+    void drawInstructions(QPainter &painter) const
+    {
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setBrush(panel);
         painter.setPen(divider);
-        painter.drawRoundedRect(badge, 9, 9);
+        painter.drawRoundedRect(instructionsRect(), 9, 9);
 
         painter.setPen(QPen(accent, 1.4));
         painter.setBrush(Qt::NoBrush);
@@ -301,35 +380,55 @@ private:
         painter.drawLine(QPointF(41, 36), QPointF(41, 46));
 
         painter.setPen(QColor(245, 242, 255));
-        painter.drawText(QPointF(72, 47), title);
+        painter.setFont(instructionTitleFont());
+        painter.drawText(QPointF(72, 47), title_);
         painter.setFont(font());
         painter.setPen(QColor(191, 193, 216));
-        painter.drawText(QPointF(72, 66), help);
+        painter.drawText(QPointF(72, 66), help_);
     }
 
-    void drawMeasurement(QPainter &painter, const QRectF &visible, const QSize &pixels) const
+    QFont measurementFont() const
     {
-        const auto label = QStringLiteral("%1 × %2 px").arg(pixels.width()).arg(pixels.height());
         QFont labelFont = font();
         labelFont.setBold(true);
-        painter.setFont(labelFont);
-        const int badgeWidth = painter.fontMetrics().horizontalAdvance(label) + 18;
+        return labelFont;
+    }
+
+    QRectF measurementRect(const QRectF &visible, const QString &label) const
+    {
+        const int badgeWidth = QFontMetrics(measurementFont()).horizontalAdvance(label) + 18;
         const qreal maxX = std::max(7, width() - badgeWidth - 7);
         const qreal x = std::clamp(visible.right() - badgeWidth, 7.0, maxX);
         const qreal y = visible.top() >= 38 ? visible.top() - 34 : visible.top() + 7;
-        const QRectF badge(x, y, badgeWidth, 27);
+        return QRectF(x, y, badgeWidth, 27);
+    }
+
+    void drawMeasurement(QPainter &painter) const
+    {
+        painter.setFont(measurementFont());
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setBrush(panel);
         painter.setPen(accent);
-        painter.drawRoundedRect(badge, 6, 6);
+        painter.drawRoundedRect(badge_, 6, 6);
         painter.setPen(QColor(245, 242, 255));
-        painter.drawText(badge, Qt::AlignCenter, label);
+        painter.drawText(badge_, Qt::AlignCenter, measurement_);
     }
 
     Session *session_;
     const QImage image_;
     const QRectF layout_;
     const bool fit_;
+    const QString title_ = QStringLiteral("Выберите область");
+    const QString help_ = QStringLiteral("Нажмите и перетащите курсор");
+    bool dragging_ = false;
+    QRectF selection_;
+    QRectF visible_;
+    QRectF badge_;
+    QString measurement_;
+    QImage preview_;
+    QRectF previewPhoto_;
+    QPointF previewOrigin_;
+    qreal previewDpr_ = 0;
     QPushButton *cancel_ = nullptr;
 };
 
@@ -384,20 +483,21 @@ void Session::begin(Overlay *overlay, const QMouseEvent &event)
     anchor_ = cursorPoint(overlay, event);
     cursor_ = anchor_;
     dragging_ = true;
-    for (auto *item : overlays_)
-        item->setDragging(true);
+    refreshOverlays();
 }
 
 void Session::move(Overlay *overlay, const QMouseEvent &event)
 {
-    cursor_ = cursorPoint(overlay, event);
-    for (auto *item : overlays_)
-        item->update();
+    const QPointF cursor = cursorPoint(overlay, event);
+    if (cursor != cursor_) {
+        cursor_ = cursor;
+        refreshOverlays();
+    }
 }
 
 void Session::end(Overlay *overlay, const QMouseEvent &event)
 {
-    move(overlay, event);
+    cursor_ = cursorPoint(overlay, event);
     QImage image = cropImage();
     if (!image.isNull()) {
         finish(std::move(image));
@@ -405,8 +505,7 @@ void Session::end(Overlay *overlay, const QMouseEvent &event)
     }
 
     dragging_ = false;
-    for (auto *item : overlays_)
-        item->setDragging(false);
+    refreshOverlays();
 }
 
 void Session::finish(QImage image)
@@ -451,14 +550,21 @@ QPointF Session::cursorPoint(const Overlay *overlay, const QMouseEvent &event) c
             std::clamp(point.y(), desktop_.top(), desktop_.bottom())};
 }
 
-bool Session::showMeasurement(const Overlay *overlay) const
+void Session::refreshOverlays()
 {
-    if (overlay->layout().contains(cursor_))
-        return true;
+    const QRectF area = selection();
     const auto current = std::find_if(overlays_.cbegin(), overlays_.cend(), [this](const Overlay *item) {
         return item->layout().contains(cursor_);
     });
-    return current == overlays_.cend() && overlay->layout().contains(anchor_);
+    const QSize pixels = area.isEmpty() ? QSize() : outputSize();
+    const QString measurement = pixels.isEmpty()
+        ? QString() : QStringLiteral("%1 × %2 px").arg(pixels.width()).arg(pixels.height());
+
+    for (auto *overlay : overlays_) {
+        const QRectF layout = overlay->layout();
+        const bool showMeasurement = layout.contains(cursor_) || (current == overlays_.cend() && layout.contains(anchor_));
+        overlay->updateSelection(dragging_, area, showMeasurement ? measurement : QString());
+    }
 }
 
 QList<Session::Crop> Session::crops() const

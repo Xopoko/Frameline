@@ -10,6 +10,74 @@
 #include <QWidget>
 #elif defined(Q_OS_MACOS)
 #include "platform/macos_capture.h"
+#elif defined(Q_OS_WIN)
+#include <qt_windows.h>
+
+#include <memory>
+#include <type_traits>
+
+namespace {
+QImage grabWindowsScreen(QScreen* screen)
+{
+    // On Windows Qt retains the monitor's native origin in its logical geometry.
+    const auto origin = screen->geometry().topLeft();
+    const auto monitor = MonitorFromPoint({origin.x(), origin.y()}, MONITOR_DEFAULTTONULL);
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    if (!monitor || !GetMonitorInfo(monitor, &info)
+        || info.rcMonitor.left != origin.x() || info.rcMonitor.top != origin.y())
+        return {};
+
+    const auto desktopWindow = GetDesktopWindow();
+    const auto desktop = GetDC(desktopWindow);
+    if (!desktop)
+        return {};
+    const auto releaseDesktop = [desktopWindow](HDC dc) { ReleaseDC(desktopWindow, dc); };
+    const std::unique_ptr<std::remove_pointer_t<HDC>, decltype(releaseDesktop)> source(
+        desktop, releaseDesktop);
+    const std::unique_ptr<std::remove_pointer_t<HDC>, decltype(&DeleteDC)> destination(
+        CreateCompatibleDC(source.get()), DeleteDC);
+    if (!destination)
+        return {};
+
+    const int width = info.rcMonitor.right - info.rcMonitor.left;
+    const int height = info.rcMonitor.bottom - info.rcMonitor.top;
+    BITMAPINFO format{};
+    format.bmiHeader.biSize = sizeof(format.bmiHeader);
+    format.bmiHeader.biWidth = width;
+    format.bmiHeader.biHeight = -height; // QImage and the bitmap both store the top row first.
+    format.bmiHeader.biPlanes = 1;
+    format.bmiHeader.biBitCount = 32;
+    format.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    std::unique_ptr<std::remove_pointer_t<HBITMAP>, decltype(&DeleteObject)> bitmap(
+        CreateDIBSection(source.get(), &format, DIB_RGB_COLORS, &bits, nullptr, 0), DeleteObject);
+    if (!bitmap || !bits)
+        return {};
+
+    const auto previous = SelectObject(destination.get(), bitmap.get());
+    if (!previous || previous == HGDI_ERROR)
+        return {};
+    const bool copied = BitBlt(destination.get(), 0, 0, width, height, source.get(),
+                               origin.x(), origin.y(), SRCCOPY | CAPTUREBLT);
+    const bool flushed = GdiFlush();
+    SelectObject(destination.get(), previous);
+    if (!copied || !flushed)
+        return {};
+
+    // A GDI BGRX bitmap leaves the top byte unspecified. Qt RGB32 requires opaque pixels.
+    auto* pixels = static_cast<QRgb*>(bits);
+    const auto count = qsizetype(width) * height;
+    for (qsizetype index = 0; index < count; ++index)
+        pixels[index] |= 0xff000000u;
+
+    QImage image(static_cast<uchar*>(bits), width, height, qsizetype(width) * sizeof(QRgb),
+                 QImage::Format_RGB32, [](void* handle) { DeleteObject(handle); }, bitmap.get());
+    if (!image.isNull())
+        bitmap.release();
+    return image;
+}
+}
 #endif
 
 bool ScreenCapture::usesScreenshotPortal()
@@ -83,7 +151,12 @@ void ScreenCapture::capture(bool region, QWidget* portalParent)
     for (auto* screen : screens) {
         if (!screen)
             continue;
-        auto image = screen->grabWindow(0).toImage();
+        QImage image;
+#if defined(Q_OS_WIN)
+        image = grabWindowsScreen(screen);
+#endif
+        if (image.isNull())
+            image = screen->grabWindow(0).toImage();
         if (!image.isNull()) {
             image.setDevicePixelRatio(1);
             frames.append({image, screen});

@@ -1,5 +1,5 @@
 #include "annotations.h"
-#include "editor.h"
+#include "pngexport.h"
 
 #include <QApplication>
 #include <QTemporaryDir>
@@ -46,6 +46,35 @@ bool annotationRendering()
     return passed;
 }
 
+bool annotationDamage()
+{
+    using namespace screenframe;
+
+    QImage source(110, 80, QImage::Format_RGB32);
+    source.fill(Qt::white);
+    const QVector<Annotation> annotations{
+        {Tool::Pen, Qt::red, 9, {{12, 56}, {32, 8}, {45, 54}}},
+        {Tool::Arrow, Qt::blue, 16, {{35, 65}, {80, 23}}},
+    };
+
+    bool passed = true;
+    for (const auto &annotation : annotations) {
+        const QImage rendered = renderAnnotations(source, {annotation}, 1);
+        const QRect damage = annotation.affectedPixels();
+        bool changedInside = false;
+        bool changedOutside = false;
+        for (int y = 0; y < source.height(); ++y) {
+            for (int x = 0; x < source.width(); ++x) {
+                if (source.pixel(x, y) != rendered.pixel(x, y)) {
+                    (damage.contains(x, y) ? changedInside : changedOutside) = true;
+                }
+            }
+        }
+        passed &= check(changedInside && !changedOutside, "Undo patches must cover the complete rendered mark.");
+    }
+    return passed;
+}
+
 bool pngExport()
 {
     const QTemporaryDir directory;
@@ -65,6 +94,11 @@ bool pngExport()
     const QImage reopened(path);
     passed &= check(reopened.size() == image.size() && reopened.pixelColor(7, 4) == image.pixelColor(7, 4),
                     "A failed write must leave the previous PNG intact.");
+
+    const QImage premultiplied = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    const QImage expected = premultiplied.convertToFormat(QImage::Format_ARGB32);
+    passed &= check(savePng(premultiplied, path, &error) && QImage(path) == expected,
+                    "Exporting a premultiplied image must preserve straight-alpha pixels.");
     return passed;
 }
 
@@ -74,6 +108,7 @@ int main(int argc, char **argv)
 {
     const QApplication application(argc, argv);
     const bool annotationsPassed = annotationRendering();
+    const bool damagePassed = annotationDamage();
     const bool exportPassed = pngExport();
-    return annotationsPassed && exportPassed ? 0 : 1;
+    return annotationsPassed && damagePassed && exportPassed ? 0 : 1;
 }
