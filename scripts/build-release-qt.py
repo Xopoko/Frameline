@@ -32,7 +32,7 @@ def main():
                         f"-DCMAKE_OSX_ARCHITECTURES={args.arch or 'x86_64;arm64'}"])
     else:
         configure = source / "configure.bat"
-        options.append("-no-schannel")
+        options.extend(["-no-schannel", "--", "-DCMAKE_C_COMPILER=cl.exe", "-DCMAKE_CXX_COMPILER=cl.exe"])
 
     subprocess.run([str(configure), "-prefix", str(sdk), *options], cwd=build, check=True)
     jobs = str(min(8, os.cpu_count() or 1))
