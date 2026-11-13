@@ -139,6 +139,20 @@ class LibraryApiTest(unittest.TestCase):
         status, headers, body = self.request("GET", path)
         self.assertEqual((status, headers["Content-Type"], body), (200, "image/jpeg", jpeg()))
 
+    def test_capture_timestamp_normalizes_fractional_precision(self):
+        values = (
+            ("2026-11-13T18:17:00Z", "2026-11-13T18:17:00.000Z"),
+            ("2026-11-13T18:17:00.1Z", "2026-11-13T18:17:00.100Z"),
+            ("2026-11-13T19:17:00.12345+01:00", "2026-11-13T18:17:00.123Z"),
+            ("2026-11-13T18:17:00.123456789Z", "2026-11-13T18:17:00.123Z"),
+        )
+        for index, (submitted, expected) in enumerate(values, 1):
+            self.assertEqual(self.put_image(index, **{"X-ScreenFrame-Captured-At": submitted}), 201)
+            self.assertEqual(self.put_image(index, **{"X-ScreenFrame-Captured-At": expected}), 204)
+        items = json.loads(self.request("GET", ROOT)[2])["items"]
+        self.assertEqual({item["id"]: item["capturedAt"] for item in items},
+                         {image_id(index): expected for index, (_, expected) in enumerate(values, 1)})
+
     def test_pagination_with_equal_timestamps_and_insertion(self):
         for index in (1, 2, 3):
             self.assertEqual(self.put_image(index), 201)

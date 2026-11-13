@@ -25,8 +25,10 @@ frameworks="$bundle/Contents/Frameworks"
 executable="$bundle/Contents/MacOS/ScreenFrame"
 
 test -f "$plugins/platforms/libqcocoa.dylib"
-# The editor uses the built-in PNG handler and the Cocoa platform plugin.
-rm -f -- "$plugins"/imageformats/libq{gif,ico,jpeg,svg}.dylib "$plugins/iconengines/libqsvgicon.dylib"
+# PNG is built in. Keep JPEG support for library thumbnails.
+rm -f -- "$plugins"/imageformats/libq{gif,heif,icns,ico,svg,tga,tiff,wbmp,webp}.dylib \
+    "$plugins/iconengines/libqsvgicon.dylib"
+rm -rf -- "$plugins/generic" "$plugins/networkinformation" "$plugins/tls"
 
 architectures=$(lipo -archs "$executable")
 find "$bundle/Contents" -type f -perm -u=x -print0 >"$work/executables"
@@ -38,8 +40,8 @@ while IFS= read -r -d '' binary; do
                 exit 1
             fi
         done
-        if [[ "$architectures" == arm64 && "$slices" != arm64 ]]; then
-            lipo "$binary" -thin arm64 -output "$binary.thin"
+        if [[ "$architectures" != *' '* && "$slices" != "$architectures" ]]; then
+            lipo "$binary" -thin "$architectures" -output "$binary.thin"
             chmod "$(stat -f '%Lp' "$binary")" "$binary.thin"
             mv -f -- "$binary.thin" "$binary"
         fi
@@ -52,7 +54,11 @@ find "$frameworks" -maxdepth 1 -type d -name '*.framework' \
     -exec codesign --force --sign - --timestamp=none {} +
 codesign --force --sign - --timestamp=none "$bundle"
 codesign --verify --deep --strict "$bundle"
-"$executable" --version
+if [[ " $architectures " == *" $(uname -m) "* ]]; then
+    "$executable" --version
+else
+    echo "Built for $architectures. Runtime smoke test requires that architecture."
+fi
 
 ln -s /Applications "$stage/Applications"
 image="$work/ScreenFrame.dmg"

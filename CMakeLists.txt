@@ -4,7 +4,7 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 14.4 CACHE STRING "Minimum macOS version")
 endif()
 
-project(ScreenFrame VERSION 0.1.3 LANGUAGES CXX)
+project(ScreenFrame VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,6 +39,10 @@ add_library(screenframe_core STATIC
     src/pngexport.h
     src/regionselector.cpp
     src/regionselector.h
+    src/settings.cpp
+    src/settings.h
+    src/settingswindow.cpp
+    src/settingswindow.h
     src/shortcuts.cpp
     src/shortcuts.h
 )
@@ -92,12 +96,25 @@ endif()
 install(TARGETS screenframe BUNDLE DESTINATION . RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 if(WIN32 OR APPLE)
+    set(SCREENFRAME_QT_NOTICES_DIR "" CACHE PATH "Directory containing notices for the bundled Qt SDK")
+    if(WIN32)
+        set(notice_destination .)
+    else()
+        set(notice_destination ScreenFrame.app/Contents/Resources)
+    endif()
+    install(FILES LICENSE DESTINATION ${notice_destination})
+    if(SCREENFRAME_QT_NOTICES_DIR)
+        install(DIRECTORY "${SCREENFRAME_QT_NOTICES_DIR}/" DESTINATION ${notice_destination}/Qt-notices)
+        install(FILES docs/release.md DESTINATION ${notice_destination} RENAME RELEASE.md)
+    endif()
     if(WIN32)
         set(deploy_target ScreenFrameGUI)
         if(Qt6_VERSION VERSION_GREATER_EQUAL 6.8)
             set(deploy_options
-                --skip-plugin-types generic,imageformats,networkinformation,tls
-                --no-system-d3d-compiler --no-system-dxc-compiler --no-opengl-sw)
+                --skip-plugin-types generic,networkinformation,tls
+                --exclude-plugins qgif,qico
+                --no-system-d3d-compiler --no-system-dxc-compiler --no-opengl-sw
+                --no-compiler-runtime --no-translations)
         endif()
     else()
         set(deploy_target screenframe)
@@ -116,13 +133,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     install(FILES scripts/configure-gnome-shortcut.py DESTINATION ${CMAKE_INSTALL_DATADIR}/screenframe)
     install(FILES resources/ScreenFrame.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
         RENAME io.github.xopoko.ScreenFrame.png)
+    install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/screenframe RENAME copyright)
+    install(FILES docs/release.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/screenframe RENAME RELEASE.md)
     set(CPACK_GENERATOR DEB)
     set(CPACK_PACKAGE_NAME screenframe)
     set(CPACK_PACKAGE_CONTACT "ScreenFrame")
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
     set(CPACK_DEBIAN_COMPRESSION_TYPE xz)
     set(CPACK_DEBIAN_PACKAGE_SECTION graphics)
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6widgets6 (>= 6.4.2), libqt6dbus6 (>= 6.4.2), libqt6network6 (>= 6.4.2), libqt6concurrent6 (>= 6.4.2), libxcb1, qt6-qpa-plugins, qt6-wayland, xdg-desktop-portal")
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "qt6-qpa-plugins, qt6-wayland, xdg-desktop-portal")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Desktop screenshot utility and annotation editor")
     include(CPack)
 endif()

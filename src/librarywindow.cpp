@@ -379,6 +379,7 @@ struct LibraryWindow::Ui {
     QLabel *listAlert = nullptr;
     QLabel *syncLabel = nullptr;
     QPushButton *refreshButton = nullptr;
+    QPushButton *setupButton = nullptr;
     QPushButton *openButton = nullptr;
     QPushButton *loadMoreButton = nullptr;
     QTimer *thumbnailTimer = nullptr;
@@ -415,6 +416,9 @@ struct LibraryWindow::Ui {
         header->setContentsMargins(18, 13, 18, 13);
         header->addWidget(label(QStringLiteral("Screenshot Library"), "libraryTitle", bar));
         header->addStretch();
+        auto *settingsButton = new QPushButton(QStringLiteral("Settings"), bar);
+        QObject::connect(settingsButton, &QPushButton::clicked, &window, &LibraryWindow::settingsRequested);
+        header->addWidget(settingsButton);
         refreshButton = new QPushButton(QStringLiteral("Refresh"), bar);
         refreshButton->setToolTip(QStringLiteral("Refresh screenshots"));
         QObject::connect(refreshButton, &QPushButton::clicked, &context, [this] { refresh(); });
@@ -448,6 +452,11 @@ struct LibraryWindow::Ui {
         stateDetails->setAlignment(Qt::AlignCenter);
         stateDetails->setWordWrap(true);
         stateLayout->addWidget(stateDetails);
+        setupButton = new QPushButton(QStringLiteral("Set up library"), statePage);
+        setupButton->setObjectName(QStringLiteral("primary"));
+        setupButton->hide();
+        QObject::connect(setupButton, &QPushButton::clicked, &window, &LibraryWindow::settingsRequested);
+        stateLayout->addWidget(setupButton, 0, Qt::AlignHCenter);
         stateLayout->addStretch();
         listContent->addWidget(statePage);
 
@@ -547,6 +556,7 @@ struct LibraryWindow::Ui {
     {
         stateTitle->setText(title);
         stateDetails->setText(details);
+        setupButton->setVisible(!client.isConfigured());
         listContent->setCurrentIndex(0);
     }
 
@@ -557,7 +567,7 @@ struct LibraryWindow::Ui {
             needsRefresh = true;
             refreshButton->setEnabled(false);
             setListState(QStringLiteral("Library is not set up"),
-                         QStringLiteral("See the ScreenFrame README for library setup instructions."));
+                         QStringLiteral("Connect to a library you host to browse screenshots from your devices."));
             return;
         }
         requestList({});
@@ -616,6 +626,8 @@ struct LibraryWindow::Ui {
                              QStringLiteral("Take a screenshot on a device connected to this library."));
             } else {
                 listContent->setCurrentWidget(listView);
+                if (!listView->currentIndex().isValid())
+                    listView->setCurrentIndex(model->index(0));
             }
             openButton->setEnabled(listView->currentIndex().isValid());
             if (needsRefresh) {

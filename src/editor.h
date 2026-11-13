@@ -26,6 +26,7 @@ signals:
     void fullCaptureRequested();
     void regionCaptureRequested();
     void libraryRequested();
+    void settingsRequested();
     void closeAccepted();
 
 protected:

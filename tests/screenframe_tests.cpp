@@ -1,7 +1,19 @@
 #include "annotations.h"
+#include "libraryclient.h"
+#include "librarywindow.h"
 #include "pngexport.h"
+#include "settings.h"
+#include "settingswindow.h"
 
 #include <QApplication>
+#include <QComboBox>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -106,6 +118,273 @@ bool pngExport()
     return passed;
 }
 
+LibrarySettings validLibrary()
+{
+    LibrarySettings library;
+    library.transport = LibraryTransport::Ssh;
+    library.sshHost = QStringLiteral("example-library");
+    library.token = QString(32, QLatin1Char('a'));
+    library.device = QStringLiteral("Test desktop");
+    library.autoArchive = true;
+    return library;
+}
+
+bool settingsValidation()
+{
+    const LibrarySettings empty;
+    const LibrarySettings valid = validLibrary();
+    bool passed = check(!empty.isConfigured() && empty.validationError().isEmpty(),
+                        "A fresh, standalone profile must be valid without a shared library.");
+    passed &= check(valid.isConfigured() && valid.validationError().isEmpty(), "A complete SSH profile should be valid.");
+
+    auto candidate = valid;
+    candidate.transport = LibraryTransport::Local;
+    candidate.sshHost.clear();
+    candidate.port = 1;
+    candidate.token = QString(256, QLatin1Char('_'));
+    candidate.device = QString(48, QLatin1Char('D'));
+    passed &= check(candidate.isConfigured() && candidate.validationError().isEmpty(),
+                    "Loopback setup should support the valid boundary lengths and minimum port.");
+    candidate.port = 65535;
+    passed &= check(candidate.validationError().isEmpty(), "The maximum TCP port is valid.");
+    candidate = valid;
+    candidate.sshHost = QString(128, QLatin1Char('h'));
+    passed &= check(candidate.validationError().isEmpty(), "A 128-character SSH host alias is valid.");
+
+    for (const int port : {0, 65536}) {
+        candidate = valid;
+        candidate.port = port;
+        passed &= check(!candidate.isConfigured() && !candidate.validationError().isEmpty(),
+                        "An out-of-range port must be rejected.");
+    }
+    for (const QString &host : {QString{}, QStringLiteral("-oProxyCommand"), QStringLiteral("host name"),
+                                QString(129, QLatin1Char('h'))}) {
+        candidate = valid;
+        candidate.sshHost = host;
+        passed &= check(!candidate.isConfigured() && !candidate.validationError().isEmpty(),
+                        "SSH profiles must use a safe, nonempty host alias of at most 128 characters.");
+    }
+    for (const QString &token : {QString(31, QLatin1Char('a')), QString(257, QLatin1Char('a')),
+                                 QString(32, QLatin1Char('+'))}) {
+        candidate = valid;
+        candidate.token = token;
+        passed &= check(!candidate.isConfigured() && !candidate.validationError().isEmpty(),
+                        "Tokens must have 32–256 URL-safe ASCII characters.");
+    }
+    for (const QString &device : {QString{}, QStringLiteral("   "), QStringLiteral("test\nname"),
+                                  QString(49, QLatin1Char('D'))}) {
+        candidate = valid;
+        candidate.device = device;
+        passed &= check(!candidate.isConfigured() && !candidate.validationError().isEmpty(),
+                        "A device label must have 1–48 printable ASCII characters.");
+    }
+    candidate = valid;
+    candidate.autoArchive = false;
+    candidate.token.clear();
+    passed &= check(!candidate.isConfigured() && !candidate.validationError().isEmpty(),
+                    "Turning off automatic archiving must not make a partial setup valid.");
+    return passed;
+}
+
+bool settingsDestinationKey()
+{
+    const LibrarySettings original = validLibrary();
+    const QString key = original.storageKey();
+    const QRegularExpression sha256(QStringLiteral("\\A[0-9a-f]{64}\\z"));
+    bool passed = check(sha256.match(key).hasMatch(), "Destination key must be a lowercase SHA-256 value.");
+
+    auto candidate = original;
+    candidate.device = QStringLiteral("Renamed desktop");
+    candidate.autoArchive = false;
+    passed &= check(candidate.storageKey() == key, "A device label or archive preference cannot change the queue destination.");
+    candidate = original;
+    candidate.sshHost = QStringLiteral("other-library");
+    passed &= check(candidate.storageKey() != key, "A different SSH host must have a separate queue.");
+    candidate.sshHost = original.sshHost.toUpper();
+    passed &= check(candidate.storageKey() != key, "An SSH host alias with different casing may route separately.");
+    candidate = original;
+    ++candidate.port;
+    passed &= check(candidate.storageKey() != key, "A different remote port must have a separate queue.");
+    candidate = original;
+    candidate.token = QString(32, QLatin1Char('b'));
+    passed &= check(candidate.storageKey() != key, "A different authorization token must have a separate queue.");
+    candidate = original;
+    candidate.transport = LibraryTransport::Local;
+    candidate.sshHost.clear();
+    passed &= check(candidate.storageKey() != key, "A local service must use a separate queue from an SSH destination.");
+    return passed;
+}
+
+bool writeSettingsFixture(const QString &path, const QJsonObject &settings)
+{
+    QFile file(path);
+    const QByteArray data = QJsonDocument(settings).toJson(QJsonDocument::Compact);
+    return file.open(QIODevice::WriteOnly) && file.write(data) == data.size();
+}
+
+bool settingsMigration()
+{
+    const QTemporaryDir directory;
+    if (!check(directory.isValid(), "A private fixture directory is required for settings tests.")) {
+        return false;
+    }
+
+    QString error;
+    const AppSettings fresh = loadSettings(directory.path(), &error);
+    bool passed = check(error.isEmpty() && !fresh.library.isConfigured() && !fresh.library.autoArchive
+                            && !fresh.useSystemRegionShortcut,
+                        "A new installation must be standalone with the system shortcut untouched.");
+
+    const LibrarySettings legacyLibrary = validLibrary();
+    const QString legacyPath = directory.filePath(QStringLiteral("library.json"));
+    if (!check(writeSettingsFixture(legacyPath, {
+                    {QStringLiteral("sshHost"), legacyLibrary.sshHost},
+                    {QStringLiteral("port"), legacyLibrary.port},
+                    {QStringLiteral("token"), legacyLibrary.token},
+                    {QStringLiteral("device"), legacyLibrary.device},
+                }), "Could not write the legacy settings fixture.")) {
+        return false;
+    }
+
+    const AppSettings migrated = loadSettings(directory.path(), &error);
+    passed &= check(error.isEmpty() && migrated.library.isConfigured() && migrated.library.autoArchive
+                        && migrated.useSystemRegionShortcut && migrated.library.transport == LibraryTransport::Ssh
+                        && migrated.library.sshHost == legacyLibrary.sshHost && migrated.library.port == legacyLibrary.port
+                        && migrated.library.token == legacyLibrary.token && migrated.library.device == legacyLibrary.device,
+                    "A valid legacy library must retain its destination, auto-archive and system shortcut settings.");
+    passed &= check(libraryQueueDirectory(migrated.library, directory.path()) == directory.filePath(QStringLiteral("queue")),
+                    "A migrated library should keep access to its existing pending screenshots.");
+
+    auto updated = migrated;
+    updated.library.sshHost = QStringLiteral("another-library");
+    updated.library.port = 19745;
+    updated.library.device = QStringLiteral("Renamed desktop");
+    updated.library.autoArchive = false;
+    updated.useSystemRegionShortcut = false;
+    if (!check(saveSettings(updated, directory.path(), &error) && error.isEmpty(), "Valid new settings should save.")) {
+        return false;
+    }
+    passed &= check(QFile::exists(legacyPath) && QFile::exists(directory.filePath(QStringLiteral("settings.json"))),
+                    "Saving settings should leave the legacy settings available for migration and rollback.");
+#if !defined(Q_OS_WIN)
+    const auto permissions = QFileInfo(directory.filePath(QStringLiteral("settings.json"))).permissions();
+    const auto exposed = QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup
+        | QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther;
+    passed &= check(!(permissions & exposed), "The settings file containing the access token must be owner-only.");
+#endif
+
+    const AppSettings reopened = loadSettings(directory.path(), &error);
+    passed &= check(error.isEmpty() && reopened.library.sshHost == updated.library.sshHost
+                        && reopened.library.port == updated.library.port && reopened.library.device == updated.library.device
+                        && reopened.library.token == updated.library.token && !reopened.library.autoArchive
+                        && !reopened.useSystemRegionShortcut,
+                    "New settings must take precedence over the legacy file and round-trip with their preferences.");
+    const QString expectedQueue = directory.filePath(QStringLiteral("queues/") + updated.library.storageKey());
+    passed &= check(libraryQueueDirectory(reopened.library, directory.path()) == expectedQueue,
+                    "A different library must use its own queue rather than adopt the legacy screenshots.");
+
+    auto invalid = updated;
+    invalid.library.autoArchive = true;
+    invalid.library.port = 0;
+    passed &= check(!saveSettings(invalid, directory.path(), &error) && !error.isEmpty(),
+                    "Saving invalid settings must return a useful error.");
+    const AppSettings retained = loadSettings(directory.path());
+    passed &= check(retained.library.storageKey() == reopened.library.storageKey() && !retained.library.autoArchive,
+                    "A rejected save must preserve the last valid settings.");
+
+    const AppSettings standalone;
+    passed &= check(saveSettings(standalone, directory.path(), &error) && error.isEmpty(),
+                    "A user must be able to save a standalone setup.");
+    const AppSettings disconnected = loadSettings(directory.path(), &error);
+    passed &= check(error.isEmpty() && !disconnected.library.isConfigured() && !disconnected.library.autoArchive
+                        && !disconnected.useSystemRegionShortcut
+                        && libraryQueueDirectory(disconnected.library, directory.path()).isEmpty(),
+                    "A cleared modern setup must not silently reactivate its legacy library.");
+
+    const QString modernPath = directory.filePath(QStringLiteral("settings.json"));
+    for (const QJsonObject &invalidFile : {QJsonObject{}, QJsonObject{{QStringLiteral("schemaVersion"), 99}}}) {
+        if (!check(writeSettingsFixture(modernPath, invalidFile), "Could not write the invalid modern settings fixture.")) {
+            return false;
+        }
+        const AppSettings invalidModern = loadSettings(directory.path(), &error);
+        passed &= check(!error.isEmpty() && !invalidModern.library.isConfigured() && !invalidModern.library.autoArchive
+                            && !invalidModern.useSystemRegionShortcut,
+                        "An unsupported settings file must report an error without turning on legacy behavior.");
+    }
+    return passed;
+}
+
+bool settingsDialog()
+{
+    SettingsWindow window(AppSettings{});
+    window.show();
+    auto *connection = window.findChild<QComboBox *>(QStringLiteral("libraryConnection"));
+    auto *host = window.findChild<QLineEdit *>(QStringLiteral("libraryHost"));
+    auto *device = window.findChild<QLineEdit *>(QStringLiteral("libraryDevice"));
+    auto *token = window.findChild<QLineEdit *>(QStringLiteral("libraryToken"));
+    QPushButton *test = nullptr;
+    QPushButton *save = nullptr;
+    for (auto *button : window.findChildren<QPushButton *>()) {
+        if (button->text() == QStringLiteral("Test Connection")) {
+            test = button;
+        } else if (button->text() == QStringLiteral("Save Settings")) {
+            save = button;
+        }
+    }
+    if (!check(connection && host && device && token && test && save, "Settings must offer library configuration controls.")) {
+        return false;
+    }
+
+    bool passed = check(!host->isVisible() && !token->isVisible() && !test->isVisible(),
+                        "Standalone settings should hide connection fields.");
+    connection->setCurrentText(QStringLiteral("Library on this computer"));
+    passed &= check(!host->isVisible() && token->isVisible() && token->echoMode() == QLineEdit::Password,
+                    "Loopback settings must hide the SSH host and mask the access token.");
+    connection->setCurrentText(QStringLiteral("Library over SSH"));
+    passed &= check(host->isVisible(), "SSH setup must expose the host field.");
+    save->click();
+    passed &= check(window.isVisible() && window.result() != QDialog::Accepted,
+                    "An incomplete connection must not close settings on Save.");
+
+    const LibrarySettings fixture = validLibrary();
+    host->setText(fixture.sshHost);
+    device->setText(fixture.device);
+    token->setText(fixture.token);
+    bool testRequested = false;
+    QObject::connect(&window, &SettingsWindow::testRequested, &window, [&](const LibrarySettings &library) {
+        testRequested = library.storageKey() == fixture.storageKey();
+    });
+    test->click();
+    passed &= check(testRequested && !save->isEnabled(), "Test Connection should use the form and wait for its result.");
+    window.setTestResult(QStringLiteral("Fixture connection succeeded."), true);
+    passed &= check(save->isEnabled(), "Settings should be editable again after the connection test.");
+    save->click();
+    passed &= check(window.result() == QDialog::Accepted && window.settings().library.storageKey() == fixture.storageKey(),
+                    "Valid SSH settings should save with the selected connection.");
+    return passed;
+}
+
+bool standaloneLibrary()
+{
+    LibraryClient client(LibrarySettings{});
+    LibraryWindow window(client);
+    window.show();
+    QPushButton *setup = nullptr;
+    for (auto *button : window.findChildren<QPushButton *>()) {
+        if (button->text() == QStringLiteral("Set up library")) {
+            setup = button;
+            break;
+        }
+    }
+    if (!check(setup && setup->isVisible(), "An unconfigured Library must offer setup from the empty state.")) {
+        return false;
+    }
+    bool requested = false;
+    QObject::connect(&window, &LibraryWindow::settingsRequested, &window, [&] { requested = true; });
+    setup->click();
+    return check(requested, "Set up library must open the app's settings flow.");
+}
+
 #if defined(Q_OS_WIN)
 bool windowsRegionKey()
 {
@@ -136,10 +415,16 @@ int main(int argc, char **argv)
     const bool annotationsPassed = annotationRendering();
     const bool damagePassed = annotationDamage();
     const bool exportPassed = pngExport();
+    const bool settingsPassed = settingsValidation();
+    const bool destinationPassed = settingsDestinationKey();
+    const bool migrationPassed = settingsMigration();
+    const bool dialogPassed = settingsDialog();
+    const bool libraryPassed = standaloneLibrary();
 #if defined(Q_OS_WIN)
     const bool shortcutPassed = windowsRegionKey();
 #else
     const bool shortcutPassed = true;
 #endif
-    return annotationsPassed && damagePassed && exportPassed && shortcutPassed ? 0 : 1;
+    return annotationsPassed && damagePassed && exportPassed && settingsPassed && destinationPassed
+        && migrationPassed && dialogPassed && libraryPassed && shortcutPassed ? 0 : 1;
 }

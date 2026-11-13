@@ -1,6 +1,7 @@
 #include "libraryclient.h"
 
 #include "pngexport.h"
+#include "settings.h"
 
 #include <QDir>
 #include <QFile>
@@ -16,7 +17,6 @@
 #include <QNetworkReply>
 #include <QPointer>
 #include <QProcess>
-#include <QRegularExpression>
 #include <QSaveFile>
 #include <QTcpServer>
 #include <QTemporaryDir>
@@ -37,11 +37,6 @@ namespace {
 constexpr qint64 maxImage = 64 * 1024 * 1024;
 constexpr qint64 maxThumbnail = 2 * 1024 * 1024;
 constexpr auto readyMarker = "screenframe-ready";
-
-QString libraryDir()
-{
-    return QDir::home().filePath(QStringLiteral(".screenframe"));
-}
 
 bool isId(const QString &id)
 {
@@ -117,24 +112,14 @@ QString sshProgram()
 } // namespace
 
 struct LibraryClient::State : QObject {
-    explicit State(LibraryClient &owner)
-        : owner(owner), queue(QDir(libraryDir()).filePath(QStringLiteral("queue")))
+    State(LibraryClient &owner, const LibrarySettings &settings)
+        : owner(owner),
+          queue(libraryQueueDirectory(settings, defaultSettingsDirectory())),
+          host(settings.transport == LibraryTransport::Ssh ? settings.sshHost : QString{}),
+          port(settings.port), device(settings.device),
+          token(settings.isConfigured() ? settings.token.toLatin1() : QByteArray{}),
+          autoArchive(settings.autoArchive)
     {
-        QFile file(QDir(libraryDir()).filePath(QStringLiteral("library.json")));
-        if (file.open(QIODevice::ReadOnly) && file.size() <= 4096) {
-            const auto config = QJsonDocument::fromJson(file.readAll()).object();
-            host = config.value(QStringLiteral("sshHost")).toString();
-            port = config.value(QStringLiteral("port")).toInt(18745);
-            device = config.value(QStringLiteral("device")).toString();
-            const QString secret = config.value(QStringLiteral("token")).toString();
-            static const QRegularExpression safeHost(QStringLiteral("\\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\\z"));
-            static const QRegularExpression safeToken(QStringLiteral("\\A[A-Za-z0-9_-]{32,256}\\z"));
-            static const QRegularExpression safeDevice(QStringLiteral("\\A[ -~]{1,48}\\z"));
-            if (port > 0 && port <= 65535 && (host.isEmpty() || safeHost.match(host).hasMatch())
-                && safeToken.match(secret).hasMatch() && safeDevice.match(device).hasMatch()) {
-                token = secret.toLatin1();
-            }
-        }
         network.setProxy(QNetworkProxy::NoProxy);
         writer.setMaxThreadCount(1);
         retry.setSingleShot(true);
@@ -193,7 +178,7 @@ struct LibraryClient::State : QObject {
 
     int pending() const
     {
-        return token.isEmpty() ? 0 : static_cast<int>(writes.size() + queuedIds().size());
+        return token.isEmpty() || !autoArchive ? 0 : static_cast<int>(writes.size() + queuedIds().size());
     }
 
     void status()
@@ -365,7 +350,7 @@ struct LibraryClient::State : QObject {
 
     void pump()
     {
-        if (token.isEmpty() || active)
+        if (token.isEmpty() || !autoArchive || active)
             return;
         for (auto &write : writes) {
             if (write.failed)
@@ -466,6 +451,7 @@ struct LibraryClient::State : QObject {
     int port = 18745;
     QString device;
     QByteArray token;
+    const bool autoArchive;
     QThreadPool writer;
     QList<Write> writes;
     QNetworkAccessManager network;
@@ -482,7 +468,8 @@ struct LibraryClient::State : QObject {
     QString uploadError;
 };
 
-LibraryClient::LibraryClient(QObject *parent) : QObject(parent), d(std::make_unique<State>(*this)) {}
+LibraryClient::LibraryClient(const LibrarySettings &settings, QObject *parent)
+    : QObject(parent), d(std::make_unique<State>(*this, settings)) {}
 LibraryClient::~LibraryClient() = default;
 
 bool LibraryClient::isConfigured() const { return !d->token.isEmpty(); }
@@ -490,7 +477,7 @@ int LibraryClient::pendingCount() const { return d->pending(); }
 
 void LibraryClient::start()
 {
-    if (isConfigured()) {
+    if (isConfigured() && d->autoArchive) {
         d->status();
         d->pump();
         // Other ScreenFrame processes, including GNOME hotkey invocations, share the same queue.
@@ -503,7 +490,7 @@ void LibraryClient::start()
 
 void LibraryClient::enqueue(QImage image, const QString &kind, const QDateTime &capturedAt)
 {
-    if (!isConfigured() || image.isNull())
+    if (!isConfigured() || !d->autoArchive || image.isNull())
         return;
     const QJsonObject metadata{{QStringLiteral("capturedAt"), capturedAt.toUTC().toString(Qt::ISODateWithMs)},
                                {QStringLiteral("device"), d->device}, {QStringLiteral("kind"), kind},

@@ -57,6 +57,8 @@ int main(int argc, char **argv)
         "screenframe capture full|region [--output <file.png>] [--no-preview]"));
     const auto help = parser.addHelpOption();
     const auto version = parser.addVersionOption();
+    parser.addPositionalArgument(QStringLiteral("command"), QStringLiteral("Open the library or capture the screen."),
+                                 QStringLiteral("[library | capture full | capture region]"));
     const QCommandLineOption tray(QStringLiteral("tray"), QStringLiteral("Start in the system tray."));
     const QCommandLineOption output({QStringLiteral("o"), QStringLiteral("output")},
                                    QStringLiteral("Save the capture as a PNG."), QStringLiteral("file.png"));

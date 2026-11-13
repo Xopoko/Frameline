@@ -4,18 +4,20 @@ ScreenFrame is a native screenshot utility built with C++ and Qt Widgets. Captur
 
 ## Install
 
-- **Windows 10/11 x64.** Extract the ZIP and open `bin/ScreenFrameGUI.exe`. The CLI is `bin/screenframe.exe`.
-- **macOS 14.4+, Apple Silicon.** Open the DMG and move `ScreenFrame.app` to Applications. Allow ScreenFrame in **System Settings → Privacy & Security → Screen & System Audio Recording**, then reopen it. The packaged app is ad hoc signed.
-- **Ubuntu 24.04+ amd64.** Run `sudo apt install ./screenframe_0.1.3_amd64.deb`, then launch ScreenFrame from the application menu.
+- **Windows 10 (1809 or later) and Windows 11, x64.** Extract the ZIP and open `bin/ScreenFrameGUI.exe`. The CLI is `bin/screenframe.exe`.
+- **macOS 14.4+.** Move `ScreenFrame.app` to Applications. Allow ScreenFrame in **System Settings → Privacy & Security → Screen & System Audio Recording**, then reopen it.
+- **Ubuntu 24.04 amd64.** Run `sudo apt install ./screenframe_0.2.0_amd64.deb`, then launch ScreenFrame from the application menu. X11 and GNOME Wayland use different capture backends.
+
+Capture, edit, copy, and save work on a fresh install without a server or account. See the [release guide](docs/release.md) for preview package and platform support details.
 
 ## Capture and edit
 
 | Action | Windows and Ubuntu | macOS |
 | --- | --- | --- |
 | Capture the screen | `Ctrl+Alt+Shift+1` | `⌘⌥⇧1` |
-| Capture a region | `Win+S` (`Super+S` on Ubuntu) | `⌘⇧5` |
+| Capture a region | `Ctrl+Alt+Shift+2` | `⌘⌥⇧2` |
 
-Keep ScreenFrame running to use its global shortcuts. On Windows, `Win+S` opens ScreenFrame's region selector in place of Windows Search while the app is running. On macOS, open **System Settings → Keyboard → Keyboard Shortcuts → Screenshots**, turn off **Screenshot and recording options**, and reopen ScreenFrame. This frees `⌘⇧5` for ScreenFrame.
+Keep ScreenFrame running to use its global shortcuts. To use the system region shortcut, enable the option in **Settings** and reopen ScreenFrame. This uses `Win+S` on Windows, `⌘⇧5` on macOS, or `Super+S` on Linux. On macOS, first turn off **Screenshot and recording options** in **System Settings → Keyboard → Keyboard Shortcuts → Screenshots**. On Linux, desktop settings may own the key.
 
 Full-screen capture takes the monitor under the pointer on Windows, macOS, and X11. For a region capture, drag over the frozen screen and release to open the crop in the editor. Press `Esc` to cancel.
 
@@ -23,37 +25,29 @@ In the editor, use Arrow (`A`), Pen (`P`), Rectangle (`R`), Blur (`B`), or Redac
 
 ## Shared screenshot library
 
-Open **Library** from the editor or tray, or run `screenframe library`. The library lists screenshots from every configured device, newest first. Select an image to view it at full resolution or save a PNG copy.
+Open **Library** from the editor or tray, or run `screenframe library`. Choose **Set up library** on the first visit. Select an image to view it at full resolution or save a PNG copy.
 
-ScreenFrame archives a capture automatically when you close its editor, replace the capture with a new one, or quit the app. It sends the final image with its annotations and redactions. Copy and Save PNG leave the image open for further edits. A `--no-preview` capture is queued immediately. If Ubuntu is unreachable, the device keeps the queued PNG locally and retries while ScreenFrame runs or the next time it starts. Existing screenshots are outside this automatic workflow.
+Enable **Automatically archive screenshots from this device** to upload the final image when you close the editor, replace the capture, or quit. Copy and Save PNG leave the capture open for more edits. `--no-preview` queues the capture immediately. If the server is unavailable, ScreenFrame keeps the queued PNG locally and retries. Connecting a library without enabling archiving gives the device browsing access without uploading new captures.
 
-To host the library on Ubuntu, run `bash scripts/install-ubuntu-library.sh` from the repository as the desktop user. The installer creates a user systemd service. Library data and its access token are kept under `~/.local/state/screenframe-library`. The server listens on Ubuntu loopback. See the [server documentation](server/README.md) for the API.
+To host the library on Ubuntu, run `bash scripts/install-ubuntu-library.sh` as your user. It creates a user systemd service and stores data and the access token under `~/.local/state/screenframe-library`. The [server guide](server/README.md) also covers running it directly.
 
-On each device, create an owner-only `~/.screenframe/library.json` using the Ubuntu library token. On Windows, `~` is the user profile. For another device, set `sshHost` to an existing SSH host alias for Ubuntu that can connect noninteractively with host-key verification. For ScreenFrame running directly on the library host, omit `sshHost`.
+In **Settings → Shared library**, choose **Library on this computer** on the server host, or **Library over SSH** on another device. For SSH, enter a host or alias from your OpenSSH configuration. It must connect noninteractively with host-key verification. Enter the server port, access token, and a device label, then choose **Test Connection** and **Save Settings**. Keep the token private. Every device with the token can read the library.
 
-```json
-{
-  "sshHost": "ubuntu-library",
-  "port": 18745,
-  "token": "<library-token>",
-  "device": "Mac"
-}
-```
-
-Restart ScreenFrame after changing its library configuration. The local upload queue lives under `~/.screenframe/queue`.
+Existing `~/.screenframe/library.json` setups keep their settings and pending uploads on upgrade. Disabling automatic archiving pauses queued uploads. Changing the destination leaves queued files with their original connection. Reconnect to that same destination and enable archiving to resume its queue.
 
 ### Ubuntu and Wayland
 
 Wayland can prompt for screen capture permission. A full-screen capture contains the desktop returned by the screenshot portal. For a region capture, ScreenFrame displays the frozen desktop image on one monitor. GNOME may also save the original screenshot in Pictures.
 
-On GNOME, the system can run `screenframe capture region` for `Super+S` even when ScreenFrame is closed. The included setup tool replaces the standard GNOME binding for that combination and can restore it later. Run it as the signed-in desktop user.
+On GNOME, the system can run `screenframe capture region` for `Super+S` even when ScreenFrame is closed. The optional setup tool replaces the standard GNOME binding and can restore it later. Run it as the signed-in desktop user.
 
 ```sh
 python3 /usr/share/screenframe/configure-gnome-shortcut.py install
+python3 /usr/share/screenframe/configure-gnome-shortcut.py status
 python3 /usr/share/screenframe/configure-gnome-shortcut.py remove
 ```
 
-On other desktops, free `Super+S` in the keyboard settings and assign it to `screenframe capture region` if ScreenFrame cannot register it. You can also assign `Ctrl+Alt+Shift+1` to `screenframe capture full` on systems without the global shortcuts portal.
+If the global shortcuts portal is unavailable, set `screenframe capture full` and `screenframe capture region` as custom commands in your desktop's keyboard settings. Use any free key combinations, such as the defaults in the table.
 
 ## Command line
 
@@ -88,4 +82,4 @@ ctest --test-dir build --output-on-failure
 
 Run `cmake --install build --prefix <absolute-path>` to stage the app and its Qt dependencies on Windows and macOS. On Ubuntu, run `cpack --config build/CPackConfig.cmake -B dist` to build a DEB.
 
-For the arm64 DMG, configure with `-DCMAKE_OSX_ARCHITECTURES=arm64` and run `bash scripts/package-macos.sh build dist/ScreenFrame-0.1.3-macOS-arm64.dmg` after building.
+See [Contributing](CONTRIBUTING.md), [Architecture](docs/architecture.md), and [Security](SECURITY.md). ScreenFrame source is available under the [MIT license](LICENSE). Qt and other bundled components have their own licenses.

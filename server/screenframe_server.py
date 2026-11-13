@@ -38,8 +38,8 @@ IMAGE_ROOT = "/v1/screenshots"
 UUID_PATTERN = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 TOKEN_PATTERN = re.compile(rb"[A-Za-z0-9_-]{32,256}")
 TIMESTAMP_PATTERN = re.compile(
-    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
-    r"(?:\.[0-9]{1,9})?(?:Z|[+-][0-9]{2}:[0-9]{2})"
+    r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})"
+    r"(?:\.([0-9]{1,9}))?(Z|[+-][0-9]{2}:[0-9]{2})"
 )
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 PNG_END = bytes.fromhex("0000000049454e44ae426082")
@@ -56,9 +56,14 @@ class RequestError(Exception):
 
 
 def timestamp(value):
-    if not TIMESTAMP_PATTERN.fullmatch(value):
+    match = TIMESTAMP_PATTERN.fullmatch(value)
+    if not match:
         raise ValueError("Expected RFC3339 timestamp")
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
+    seconds, fraction, offset = match.groups()
+    if fraction:
+        # Python 3.10 accepts only three or six fractional digits.
+        seconds += "." + fraction[:6].ljust(6, "0")
+    return datetime.fromisoformat(seconds + ("+00:00" if offset == "Z" else offset)).astimezone(
         timezone.utc
     ).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 

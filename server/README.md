@@ -1,13 +1,39 @@
 # ScreenFrame library server
 
-Run with Python 3.10 or newer.
+## Start a library
+
+On Ubuntu with systemd, run `bash scripts/install-ubuntu-library.sh` from the repository root as your regular user. The service stores screenshots and the access token under `~/.local/state/screenframe-library`. If the server must run while you are signed out, enable user lingering with `loginctl enable-linger "$USER"`.
+
+To run the server directly, use Python 3.10 or newer. On a fresh setup, create a private data directory and generate a token once.
 
 ```sh
-python3 server/screenframe_server.py --data-dir "$HOME/.local/share/screenframe/library" \
-  --token-file "$HOME/.config/screenframe/library.token"
+umask 077
+library="$HOME/.local/state/screenframe-library"
+mkdir -p "$library"
+(set -C; python3 -c 'import secrets; print(secrets.token_urlsafe(32))' > "$library/token")
 ```
 
-The server listens on `127.0.0.1:18745` by default. Clients on other devices connect over an authenticated SSH tunnel. Set `--port` if you need a different loopback port. On Ubuntu, the service user needs a private token file and data directory. A token contains 32–256 URL-safe ASCII characters. Use mode 0600 for the token file and 0700 for the data directory.
+Reuse the token whenever you restart the server.
+
+```sh
+python3 server/screenframe_server.py --data-dir "$library" --token-file "$library/token"
+```
+
+The server listens on `127.0.0.1:18745` by default. Use `--port` to change the loopback port. Keep the token file at mode 0600 and the data directory at mode 0700. A token contains 32–256 URL-safe ASCII characters.
+
+## Connect a device
+
+Open **Settings → Shared library** and choose **Library on this computer** on the server host. On a different device, choose **Library over SSH**. Set up your SSH key and host alias in your OpenSSH client first. For example, add an entry to `~/.ssh/config` and substitute your server's host and SSH user.
+
+```sshconfig
+Host screenshots-server
+    HostName server.example.net
+    User library-user
+```
+
+Verify the host key when you connect for the first time. `ssh -o BatchMode=yes screenshots-server true` should then succeed without a prompt. The SSH server must allow local port forwarding. In ScreenFrame, enter the same host alias, the library port (18745 by default), the token, and a device name. Select **Test Connection** before saving. Enable automatic archiving on each device that should upload screenshots.
+
+The shared bearer token grants read and write access to the library. Give it only to devices you trust. Screenshots stay on disk indefinitely. The server has no automatic retention policy or total storage quota.
 
 ## HTTP API
 

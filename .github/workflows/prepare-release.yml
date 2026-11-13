@@ -1,0 +1,133 @@
+name: Prepare release artifacts
+
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: windows-2022, target: windows-x64, qt-sdk: windows}
+          - {runner: macos-15, target: macos-universal, qt-sdk: macos}
+          - {runner: macos-15-intel, target: macos-intel-test, qt-sdk: macos}
+          - {runner: ubuntu-24.04, target: ubuntu-24.04-amd64}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        if: matrix.qt-sdk
+        with:
+          python-version: '3.12'
+      - name: Read version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^project(ScreenFrame VERSION \([0-9.]*\) LANGUAGES CXX)$/\1/p' CMakeLists.txt)
+          test -n "$version"
+          echo "SCREENFRAME_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Prepare official Qt SDK
+        if: matrix.qt-sdk
+        shell: bash
+        env:
+          QT_SDK: ${{ matrix.qt-sdk }}
+        run: |
+          python scripts/release-qt.py sdk "$QT_SDK" release-qt/sdk
+          if [[ "$RUNNER_OS" == Windows || "${{ matrix.target }}" == macos-universal ]]; then
+            qt_source=$(python scripts/release-qt.py source release-qt)
+            python scripts/release-qt.py notices "$qt_source" release-qt/sdk release-qt/notices
+          fi
+      - name: Install build dependencies on Ubuntu
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y dpkg-dev file qt6-base-dev libx11-dev libxcb1-dev
+      - name: Configure, build, and test on Windows
+        if: runner.os == 'Windows'
+        run: |
+          $env:Path = "${{ github.workspace }}/release-qt/sdk/bin;$env:Path"
+          cmake -S . -B build -G 'Visual Studio 17 2022' -A x64 -DCMAKE_PREFIX_PATH=release-qt/sdk -DSCREENFRAME_QT_NOTICES_DIR=release-qt/notices
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build -C Release --output-on-failure
+      - name: Package Windows ZIP
+        if: runner.os == 'Windows'
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw 'Visual C++ tools were not found.' }
+          & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          ./scripts/package-windows.ps1 -BuildDirectory build -OutputZip "dist/ScreenFrame-$env:SCREENFRAME_VERSION-windows-x64.zip"
+      - name: Configure, build, and test on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          if [[ "$RELEASE_TARGET" == macos-universal ]]; then
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release '-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64' \
+              -DCMAKE_PREFIX_PATH="$PWD/release-qt/sdk" -DSCREENFRAME_QT_NOTICES_DIR="$PWD/release-qt/notices"
+          else
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+              -DCMAKE_PREFIX_PATH="$PWD/release-qt/sdk"
+          fi
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+      - name: Package universal macOS DMG
+        if: matrix.target == 'macos-universal'
+        run: |
+          bash scripts/package-macos.sh build "dist/ScreenFrame-$SCREENFRAME_VERSION-macOS-universal.dmg"
+          cp "release-qt/qtbase-everywhere-src-"*.tar.xz dist/
+      - name: Configure, build, and test on Ubuntu
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+          python3 -B -m unittest discover -s server
+      - name: Package and verify Ubuntu DEB
+        if: runner.os == 'Linux'
+        run: |
+          cpack --config build/CPackConfig.cmake -G DEB -B dist
+          package="dist/screenframe_${SCREENFRAME_VERSION}_amd64.deb"
+          dpkg-deb --info "$package"
+          sudo apt-get install -y "./$package"
+          test "$(screenframe --version)" = "ScreenFrame $SCREENFRAME_VERSION"
+      - name: Upload packages for aggregation
+        if: matrix.target != 'macos-intel-test'
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.target }}
+          path: |
+            dist/*.zip
+            dist/*.dmg
+            dist/*.deb
+            dist/*.tar.xz
+          if-no-files-found: error
+          compression-level: 0
+
+  collect:
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: release
+          merge-multiple: true
+      - name: Create SHA-256 manifest
+        working-directory: release
+        run: |
+          sha256sum -- *.zip *.dmg *.deb *.tar.xz > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenframe-release-candidate
+          path: release/
+          if-no-files-found: error
+          compression-level: 0

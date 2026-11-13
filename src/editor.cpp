@@ -501,6 +501,9 @@ struct EditorWindow::Ui {
         save = makeButton(QStringLiteral("Save PNG"), Icon::Save, header, "primary");
         row->addWidget(copy);
         row->addWidget(save);
+        auto *settings = new QPushButton(QStringLiteral("Settings"), header);
+        row->addWidget(settings);
+        QObject::connect(settings, &QPushButton::clicked, &window, &EditorWindow::settingsRequested);
         QObject::connect(copy, &QPushButton::clicked, &window, [this] { copyImage(); });
         QObject::connect(save, &QPushButton::clicked, &window, [this] { saveImage(); });
         return header;

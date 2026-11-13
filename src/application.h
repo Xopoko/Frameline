@@ -2,6 +2,7 @@
 
 #include "capture.h"
 #include "editor.h"
+#include "settings.h"
 #include "shortcuts.h"
 
 #include <QDateTime>
@@ -12,6 +13,7 @@
 
 class LibraryClient;
 class LibraryWindow;
+class SettingsWindow;
 
 struct LaunchOptions {
     enum class Mode { Desktop, Library, Full, Region };
@@ -32,6 +34,8 @@ private:
     EditorWindow &editor();
     void showEditor();
     void showLibrary();
+    void showSettings();
+    void connectLibraryClient();
     void quitDesktop();
     void beginCapture(bool region, bool fromTrayMenu = false);
     void captureAfterHiding(bool surfaceWasVisible);
@@ -52,11 +56,15 @@ private:
     };
 
     LaunchOptions m_options;
+    AppSettings m_settings;
+    QString m_settingsError;
     ScreenCapture m_capture;
     GlobalShortcuts m_shortcuts;
     std::unique_ptr<LibraryClient> m_libraryClient;
     std::unique_ptr<EditorWindow> m_editor;
     std::unique_ptr<LibraryWindow> m_library;
+    std::unique_ptr<SettingsWindow> m_settingsWindow;
+    std::unique_ptr<LibraryClient> m_testClient;
     std::unique_ptr<QMenu> m_trayMenu;
     QSystemTrayIcon m_tray;
     QString m_fullShortcut;

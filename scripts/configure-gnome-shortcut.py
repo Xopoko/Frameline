@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Assign GNOME's Super+S to ScreenFrame and restore it on request."""
+"""Opt in to replacing GNOME's Super+S with ScreenFrame, or restore it."""
 
 import argparse
 import fcntl
@@ -51,13 +51,37 @@ def check_other_custom_bindings(media):
             raise ValueError("Another custom shortcut already uses Super+S.")
 
 
+def assignment_matches(media, custom, record):
+    return (CUSTOM in media.get_strv(LIST)
+            and all(custom.get_string(key) == value for key, value in record["custom"].items()))
+
+
+def status(media, shell, custom, record_path):
+    if record_path.exists():
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        if not assignment_matches(media, custom, record):
+            print("The saved ScreenFrame shortcut differs from the GNOME settings.")
+            return 1
+        if any(user_value(shell, key) != change["after"] for key, change in record["shell"].items()):
+            print("The previous GNOME shortcut was edited after ScreenFrame was configured.")
+            return 1
+        check_other_custom_bindings(media)
+        print("Super+S is assigned to ScreenFrame.")
+        return 0
+    if CUSTOM in media.get_strv(LIST):
+        print("A ScreenFrame shortcut exists without saved settings.")
+        return 1
+    print("Super+S takeover is not configured.")
+    return 1
+
+
 def install(media, shell, custom, record_path, executable):
     if record_path.exists():
         record = json.loads(record_path.read_text(encoding="utf-8"))
-        if (CUSTOM in media.get_strv(LIST)
-                and all(custom.get_string(key) == value for key, value in record["custom"].items())
+        if (assignment_matches(media, custom, record)
                 and all(user_value(shell, key) == change["after"]
                         for key, change in record["shell"].items())):
+            check_other_custom_bindings(media)
             print("Super+S already launches ScreenFrame.")
             return
         raise ValueError("An incomplete ScreenFrame shortcut assignment exists. Run remove first.")
@@ -133,7 +157,8 @@ def remove(media, shell, custom, record_path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("install", "remove"))
+    parser.add_argument("action", choices=("install", "remove", "status"),
+                        help="install replaces Super+S, remove restores it, status only checks")
     parser.add_argument("--executable", default="/usr/bin/screenframe",
                         help="absolute path to ScreenFrame (for install)")
     args = parser.parse_args()
@@ -147,11 +172,14 @@ def main():
         parser.error("Run this command without sudo.")
 
     state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "screenframe"
-    state.mkdir(mode=0o700, parents=True, exist_ok=True)
     record_path = state / "gnome-region-shortcut.json"
+    settings = Gio.Settings.new(MEDIA), Gio.Settings.new(SHELL), custom_settings(CUSTOM)
+    if args.action == "status":
+        sys.exit(status(*settings, record_path))
+
+    state.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (state / "gnome-region-shortcut.lock").open("a", encoding="utf-8") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        settings = Gio.Settings.new(MEDIA), Gio.Settings.new(SHELL), custom_settings(CUSTOM)
         if args.action == "install":
             install(*settings, record_path, args.executable)
         else:
