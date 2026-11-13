@@ -1,13 +1,20 @@
 #include "application.h"
 
 #include "libraryclient.h"
+#include "libraryserver.h"
 #include "librarywindow.h"
 #include "pngexport.h"
 #include "regionselector.h"
 #include "settingswindow.h"
+#include "singleinstance.h"
+#include "tailscale.h"
+#include "platform/autostart.h"
 
 #include <QApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QMessageBox>
+#include <QProcess>
 #include <QPushButton>
 #include <QTextStream>
 #include <QTimer>
@@ -37,6 +44,16 @@ ScreenFrameApplication::ScreenFrameApplication(LaunchOptions options)
     : options_(std::move(options))
 {
     settings_ = loadSettings(defaultSettingsDirectory(), &settingsError_);
+    libraryServer_ = std::make_unique<LibraryServer>();
+    tailscale_ = std::make_unique<TailscaleMonitor>();
+    libraryServer_->setPeerAuthorizer([this](const QString &local, const QString &peer) {
+        return tailscale_->status().sourceForPeer(peer) == local;
+    });
+    connect(tailscale_.get(), &TailscaleMonitor::statusChanged, this, [this](const TailscaleStatus &status) {
+        if (settingsWindow_)
+            settingsWindow_->setTailscaleStatus(status);
+    });
+    connect(tailscale_.get(), &TailscaleMonitor::refreshed, this, [this] { refreshHostedSharing(); });
     libraryClient_ = std::make_unique<LibraryClient>(settings_.library);
     connectLibraryClient();
     connect(qApp, &QApplication::aboutToQuit, this, [this] {
@@ -79,7 +96,8 @@ void ScreenFrameApplication::connectLibraryClient()
 
 bool ScreenFrameApplication::isDesktop() const
 {
-    return options_.mode == LaunchOptions::Mode::Desktop || options_.mode == LaunchOptions::Mode::Library;
+    return options_.mode == LaunchOptions::Mode::Desktop || options_.mode == LaunchOptions::Mode::Library
+        || options_.mode == LaunchOptions::Mode::Settings;
 }
 
 void ScreenFrameApplication::start()
@@ -87,7 +105,17 @@ void ScreenFrameApplication::start()
     // The capture overlay can briefly be the last visible window. Closing the final editor
     // should also give the local Library queue time to finish writing.
     QApplication::setQuitOnLastWindowClosed(false);
+    if (isDesktop()) {
+        startHostedLibrary(settings_.hostedLibrary, &hostedLibraryError_);
+        if (settings_.library.transport == LibraryTransport::Local
+            && settings_.hostedLibrary.enabled && settings_.library.token == settings_.hostedLibrary.token)
+            libraryClient_->setConnectionError(hostedLibraryError_);
+        if (settings_.hostedLibrary.share)
+            tailscale_->refresh();
+    }
     libraryClient_->start();
+    if (!hostedLibraryError_.isEmpty())
+        refreshLibraryStatus(libraryClient_->pendingCount(), hostedLibraryError_);
     if (!settingsError_.isEmpty()) {
         if (isDesktop())
             refreshLibraryStatus(0, settingsError_);
@@ -122,11 +150,60 @@ void ScreenFrameApplication::start()
     }
 
     shortcuts_.start(settings_.useSystemRegionShortcut ? RegionShortcutPreset::System : RegionShortcutPreset::Standard);
-    if (options_.mode == LaunchOptions::Mode::Library) {
+    if (options_.mode == LaunchOptions::Mode::Settings) {
+        showSettings();
+        if (!tray_.isVisible())
+            showEditor();
+    } else if (options_.mode == LaunchOptions::Mode::Library) {
         showLibrary();
     } else if (!options_.trayOnly || !tray_.isVisible()) {
         showEditor();
     }
+}
+
+void ScreenFrameApplication::activate(LaunchOptions::Mode mode)
+{
+    if (settingsWindow_) {
+        bringToFront(*settingsWindow_);
+    } else if (mode == LaunchOptions::Mode::Settings) {
+        showSettings();
+    } else if (mode == LaunchOptions::Mode::Library) {
+        showLibrary();
+    } else {
+        showEditor();
+    }
+}
+
+bool ScreenFrameApplication::startHostedLibrary(const HostedLibrarySettings &settings, QString *error)
+{
+    libraryServer_->stop();
+    if (error)
+        error->clear();
+    hostedSharingError_.clear();
+    if (!settings.enabled)
+        return true;
+    return libraryServer_->start(settings.directory, settings.token, quint16(settings.port), error);
+}
+
+void ScreenFrameApplication::refreshHostedSharing()
+{
+    hostedSharingError_.clear();
+    QString address;
+    if (libraryServer_->port() && settings_.hostedLibrary.share) {
+        const TailscaleStatus status = tailscale_->status();
+        if (status.state == TailscaleState::Ready)
+            address = status.localAddress;
+        else
+            hostedSharingError_ = status.message;
+    }
+    if (libraryServer_->port() && libraryServer_->shareAddress() != address) {
+        QString error;
+        if (!libraryServer_->setShareAddress(address, &error))
+            hostedSharingError_ = error;
+    }
+    if (settingsWindow_)
+        settingsWindow_->setHostedStatus(libraryServer_->port() != 0, libraryServer_->shareAddress(),
+                                        hostedLibraryError_.isEmpty() ? hostedSharingError_ : hostedLibraryError_);
 }
 
 EditorWindow &ScreenFrameApplication::editor()
@@ -169,11 +246,32 @@ void ScreenFrameApplication::showSettings()
 {
     if (busy_ || quitting_ || settingsWindow_)
         return;
+    if (!isDesktop()) {
+        if (SingleInstance::requestSettings())
+            return;
+        QProcess desktop;
+        QString executable = QCoreApplication::applicationFilePath();
+#ifdef Q_OS_WIN
+        executable = QFileInfo(executable).dir().filePath(QStringLiteral("ScreenFrameGUI.exe"));
+        desktop.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *arguments) {
+            arguments->flags |= CREATE_NO_WINDOW;
+        });
+#endif
+        desktop.setProgram(executable);
+        desktop.setArguments({QStringLiteral("settings")});
+        if (!desktop.startDetached())
+            QMessageBox::warning(editor_.get(), QStringLiteral("ScreenFrame settings"),
+                                 QStringLiteral("Open ScreenFrame from your applications to change settings."));
+        return;
+    }
 
     QString settingsError;
     const AppSettings saved = loadSettings(defaultSettingsDirectory(), &settingsError);
-    QWidget *parent = library_ && library_->isVisible() ? static_cast<QWidget *>(library_.get()) : editor_.get();
-    settingsWindow_ = std::make_unique<SettingsWindow>(saved, parent);
+    settingsWindow_ = std::make_unique<SettingsWindow>(saved);
+    settingsWindow_->setTailscaleStatus(tailscale_->status());
+    refreshHostedSharing();
+    connect(settingsWindow_.get(), &SettingsWindow::refreshTailscaleRequested, tailscale_.get(), &TailscaleMonitor::refresh);
+    connect(settingsWindow_.get(), &SettingsWindow::saveRequested, this, &ScreenFrameApplication::saveWindowSettings);
     connect(settingsWindow_.get(), &SettingsWindow::testRequested, this, [this](const LibrarySettings &settings) {
         testClient_ = std::make_unique<LibraryClient>(settings);
         testClient_->list({}, settingsWindow_.get(), [this](QList<LibraryItem>, const QString &, const QString &error) {
@@ -181,29 +279,81 @@ void ScreenFrameApplication::showSettings()
         });
     });
     if (!settingsError.isEmpty()) {
-        QMessageBox::warning(parent, QStringLiteral("ScreenFrame settings"),
+        QMessageBox::warning(settingsWindow_.get(), QStringLiteral("ScreenFrame settings"),
                              settingsError + QStringLiteral("\n\nSave new settings to replace the unreadable configuration."));
     }
-    const bool accepted = settingsWindow_->exec() == QDialog::Accepted;
-    const AppSettings updated = settingsWindow_->settings();
+    if (saved.hostedLibrary.share || saved.library.transport == LibraryTransport::Tailscale)
+        tailscale_->refresh();
+    settingsWindow_->exec();
     settingsWindow_.reset();
     testClient_.reset();
-    if (!accepted)
+    if (std::exchange(restoreLibraryAfterSettings_, false))
+        showLibrary();
+}
+
+void ScreenFrameApplication::saveWindowSettings(AppSettings updated, bool autostart)
+{
+    if (!settingsWindow_)
         return;
+    const auto fail = [this](const QString &error) { settingsWindow_->setSaveResult(error, settings_); };
+    QString error;
+    const bool editAutostart = settingsWindow_->autostartEditable();
+    const Autostart::State previousAutostart = editAutostart ? Autostart::snapshot(&error) : Autostart::State{};
+    if (!error.isEmpty()) {
+        fail(error);
+        return;
+    }
+    if (updated.library != settings_.library && !flushLibrary()) {
+        fail(QStringLiteral("Could not save the pending screenshots on this computer. Try again after the queue error clears."));
+        return;
+    }
+    auto previousHost = settings_.hostedLibrary;
+    previousHost.share = updated.hostedLibrary.share;
+    const bool hostingChanged = updated.hostedLibrary != previousHost
+        || (updated.hostedLibrary.enabled && !libraryServer_->port());
+    const auto restoreHosting = [this, hostingChanged] {
+        if (hostingChanged) {
+            startHostedLibrary(settings_.hostedLibrary, &hostedLibraryError_);
+            refreshHostedSharing();
+        }
+    };
+    if (hostingChanged && !startHostedLibrary(updated.hostedLibrary, &error)) {
+        // A new library may choose a free port without invalidating any existing invitations.
+        const bool newLibrary = settings_.hostedLibrary.token.isEmpty();
+        const bool started = newLibrary && updated.hostedLibrary.enabled
+            && libraryServer_->start(updated.hostedLibrary.directory, updated.hostedLibrary.token, 0, &error);
+        if (!started) {
+            restoreHosting();
+            fail(error);
+            return;
+        }
+        updated.hostedLibrary.port = libraryServer_->port();
+        if (updated.library.transport == LibraryTransport::Local
+            && updated.library.token == updated.hostedLibrary.token)
+            updated.library.port = updated.hostedLibrary.port;
+    }
+    const bool changeAutostart = editAutostart && (autostart || previousAutostart.isEnabled());
+    if (changeAutostart && !Autostart::setEnabled(autostart, &error)) {
+        QString rollbackError;
+        if (!Autostart::restore(previousAutostart, &rollbackError))
+            error += QStringLiteral("\n") + rollbackError;
+        restoreHosting();
+        fail(error);
+        return;
+    }
+    if (!saveSettings(updated, defaultSettingsDirectory(), &error)) {
+        if (changeAutostart) {
+            QString rollbackError;
+            if (!Autostart::restore(previousAutostart, &rollbackError))
+                error += QStringLiteral("\n") + rollbackError;
+        }
+        restoreHosting();
+        fail(error);
+        return;
+    }
 
     const bool libraryChanged = updated.library != settings_.library;
     const bool destinationChanged = updated.library.storageKey() != settings_.library.storageKey();
-    if (libraryChanged && !flushLibrary()) {
-        QMessageBox::warning(parent, QStringLiteral("Settings could not be changed"),
-                             QStringLiteral("ScreenFrame could not save its pending screenshots locally. Try again after the queue error clears."));
-        return;
-    }
-    QString error;
-    if ((updated != saved || !settingsError.isEmpty()) && !saveSettings(updated, defaultSettingsDirectory(), &error)) {
-        QMessageBox::warning(parent, QStringLiteral("Settings could not be saved"), error);
-        return;
-    }
-
     const bool shortcutChanged = updated.useSystemRegionShortcut != settings_.useSystemRegionShortcut;
     const bool libraryWasVisible = library_ && library_->isVisible();
     const bool keepPreviewLocal = previewCapture_.capturedAt.isValid()
@@ -211,7 +361,8 @@ void ScreenFrameApplication::showSettings()
     if (keepPreviewLocal)
         previewCapture_ = {};
     settings_ = updated;
-    const bool hadSettingsError = !settingsError_.isEmpty();
+    const bool hadSettingsError = !settingsError_.isEmpty() || !hostedLibraryError_.isEmpty();
+    hostedLibraryError_.clear();
     settingsError_.clear();
     if (libraryChanged) {
         library_.reset();
@@ -219,9 +370,9 @@ void ScreenFrameApplication::showSettings()
         connectLibraryClient();
         refreshLibraryStatus(0, {});
         libraryClient_->start();
-        if (libraryWasVisible)
-            showLibrary();
+        restoreLibraryAfterSettings_ = restoreLibraryAfterSettings_ || libraryWasVisible;
     } else if (hadSettingsError) {
+        libraryClient_->setConnectionError({});
         refreshLibraryStatus(0, {});
     }
     if (shortcutChanged || keepPreviewLocal) {
@@ -233,9 +384,12 @@ void ScreenFrameApplication::showSettings()
                 message += QStringLiteral("\n\n");
             message += QStringLiteral("The screenshot already open will stay local. Use Save PNG to keep a copy.");
         }
-        QWidget *messageParent = libraryWasVisible ? static_cast<QWidget *>(library_.get()) : editor_.get();
-        QMessageBox::information(messageParent, QStringLiteral("Settings saved"), message);
+        QMessageBox::information(settingsWindow_.get(), QStringLiteral("Settings saved"), message);
     }
+    settingsWindow_->setSaveResult({}, settings_);
+    refreshHostedSharing();
+    if (settings_.hostedLibrary.share)
+        tailscale_->refresh();
 }
 
 void ScreenFrameApplication::quitDesktop()
@@ -491,12 +645,13 @@ void ScreenFrameApplication::exitAfterLibrarySync()
 
 void ScreenFrameApplication::refreshLibraryStatus(int pending, const QString &error)
 {
-    if (error.isEmpty()) {
+    const QString message = hostedLibraryError_.isEmpty() ? error : hostedLibraryError_;
+    if (message.isEmpty()) {
         libraryMessage_.clear();
     } else if (pending > 0) {
-        libraryMessage_ = QStringLiteral("Library (%1 pending): %2").arg(pending).arg(error);
+        libraryMessage_ = QStringLiteral("Library (%1 pending): %2").arg(pending).arg(message);
     } else {
-        libraryMessage_ = QStringLiteral("Library: %1").arg(error);
+        libraryMessage_ = QStringLiteral("Library: %1").arg(message);
     }
     tray_.setToolTip(libraryMessage_.isEmpty() ? QStringLiteral("ScreenFrame") : libraryMessage_);
     if (editor_) {

@@ -297,10 +297,13 @@ void ScreenFrameTests::settingsDialog()
 
     QVERIFY2(!host->isVisible() && !token->isVisible() && !test->isVisible(),
              "Standalone settings should hide connection fields.");
-    connection->setCurrent(1);
+    connection->setCurrent(3);
+    auto *transport = window.findChild<Segmented *>(QStringLiteral("libraryManualTransport"));
+    QVERIFY(transport);
+    transport->setCurrent(0);
     QVERIFY2(!host->isVisible() && token->isVisible() && token->echoMode() == QLineEdit::Password,
              "Loopback settings must hide the SSH host and mask the access token.");
-    connection->setCurrent(2);
+    transport->setCurrent(1);
     QVERIFY2(host->isVisible(), "SSH setup must expose the host field.");
     save->click();
     QVERIFY2(window.isVisible() && window.result() != QDialog::Accepted,
@@ -318,6 +321,9 @@ void ScreenFrameTests::settingsDialog()
     QVERIFY2(testRequested && !save->isEnabled(), "Test Connection should use the form and wait for its result.");
     window.setTestResult({});
     QVERIFY2(save->isEnabled(), "Settings should be editable again after the connection test.");
+    connect(&window, &SettingsWindow::saveRequested, &window, [&](const AppSettings &settings, bool) {
+        window.setSaveResult({}, settings);
+    });
     save->click();
     QVERIFY2(window.result() == QDialog::Accepted && window.settings().library.storageKey() == fixture.storageKey(),
              "Valid SSH settings should save with the selected connection.");

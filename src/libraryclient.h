@@ -32,6 +32,8 @@ public:
     bool isConfigured() const;
     int pendingCount() const;
     void start();
+    // A hosted library can still queue captures when it cannot listen.
+    void setConnectionError(const QString &error);
     void enqueue(QImage image, const QString &kind, const QDateTime &capturedAt);
     bool flushPendingWrites();
     void list(const QString &cursor, QObject *context, ListCallback callback);
