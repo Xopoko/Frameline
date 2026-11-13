@@ -10,6 +10,8 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QDir>
+#include <QFile>
+#include <QEasingCurve>
 #include <QLineEdit>
 #include <QListView>
 #include <QPainter>
@@ -275,6 +277,186 @@ void libraryShots(int port, const QString &token)
     shoot(library, QStringLiteral("24-library-unreachable"));
 }
 
+
+// Records the frames of the README demo. Each frame's pointer position and cursor go to frames.txt,
+// so the compositing script can draw the pointer that a grab leaves out.
+class Recorder {
+public:
+    Recorder(const QString &directory, int first) : directory(directory), index(first), log(directory + QStringLiteral("/frames.txt"))
+    {
+        QDir().mkpath(directory);
+        if (!log.open(QIODevice::Append | QIODevice::Text)) {
+            qWarning("Cannot write %s", qPrintable(log.fileName()));
+        }
+    }
+
+    QPoint pointer;
+    const char *cursor = "arrow";
+    int index;
+
+    void frame(QWidget &window)
+    {
+        window.grab().save(QStringLiteral("%1/%2.png").arg(directory).arg(index, 4, 10, QLatin1Char('0')));
+        log.write(QStringLiteral("%1 %2 %3 %4\n").arg(index).arg(pointer.x()).arg(pointer.y()).arg(QString::fromLatin1(cursor)).toUtf8());
+        log.flush();
+        ++index;
+    }
+
+    void hold(QWidget &window, int frames)
+    {
+        for (int i = 0; i < frames; ++i) {
+            QTest::qWait(66);
+            frame(window);
+        }
+    }
+
+    // Moves the pointer along an eased path, delivering the moves so hover states react.
+    void glide(QWidget &window, QWidget *target, QPoint to, int frames, const char *shape = "arrow")
+    {
+        const QPoint from = pointer;
+        QEasingCurve curve(QEasingCurve::InOutCubic);
+        for (int i = 1; i <= frames; ++i) {
+            const qreal t = curve.valueForProgress(qreal(i) / frames);
+            pointer = from + (to - from) * t;
+            cursor = shape;
+            if (target) {
+                QTest::mouseMove(target, target->mapFrom(&window, pointer));
+            }
+            QTest::qWait(30);
+            frame(window);
+        }
+    }
+
+private:
+    QString directory;
+    QFile log;
+};
+
+QWidget *namedWidget(QWidget &window, const QString &name)
+{
+    for (auto *widget : window.findChildren<QWidget *>()) {
+        if (widget->isVisible() && (widget->accessibleName() == name)) {
+            return widget;
+        }
+    }
+    qWarning("No widget named %s", qPrintable(name));
+    return nullptr;
+}
+
+QPoint centerOf(QWidget &window, QWidget *widget)
+{
+    return widget ? widget->mapTo(&window, widget->rect().center()) : QPoint();
+}
+
+const QSize demoSize(1180, 780);
+const QSize demoCapture(2360, 1560);
+const QRect demoSelection(140, 66, 900, 586);
+
+void regionDemo(const QString &directory)
+{
+    Recorder record(directory, 100);
+    RegionSelector::start({CaptureFrame{sampleCapture(demoCapture), nullptr}}, [](QImage) {});
+    settle(300);
+    QWidget *overlay = nullptr;
+    for (auto *widget : QApplication::topLevelWidgets()) {
+        if (widget->isVisible() && widget->windowTitle().contains(QStringLiteral("Select region"))) {
+            overlay = widget;
+        }
+    }
+    if (!overlay) {
+        qWarning("The region overlay did not open");
+        return;
+    }
+    overlay->resize(demoSize);
+    settle();
+    record.pointer = QPoint(640, 470);
+    record.cursor = "cross";
+    QTest::mouseMove(overlay, record.pointer);
+    record.hold(*overlay, 4);
+    record.glide(*overlay, overlay, demoSelection.topLeft(), 14, "cross");
+    record.hold(*overlay, 3);
+    QTest::mousePress(overlay, Qt::LeftButton, {}, demoSelection.topLeft());
+    QEasingCurve curve(QEasingCurve::InOutCubic);
+    for (int i = 1; i <= 22; ++i) {
+        const qreal t = curve.valueForProgress(i / 22.0);
+        record.pointer = demoSelection.topLeft() + (demoSelection.bottomRight() - demoSelection.topLeft()) * t;
+        QTest::mouseMove(overlay, record.pointer);
+        QTest::qWait(30);
+        record.frame(*overlay);
+    }
+    record.hold(*overlay, 8);
+    QTest::keyClick(overlay, Qt::Key_Escape);
+    settle(100);
+}
+
+void editorDemo(const QString &directory)
+{
+    Recorder record(directory, 0);
+    EditorWindow editor;
+    editor.setShortcuts(QStringLiteral("⌘⌥⇧1"), QStringLiteral("⌘⌥⇧2"));
+    present(editor, demoSize);
+    settle();
+
+    // The start screen: reach for Select region.
+    QWidget *hero = namedWidget(editor, QStringLiteral("Select screen region"));
+    record.pointer = QPoint(930, 640);
+    record.hold(editor, 6);
+    record.glide(editor, &editor, centerOf(editor, hero), 14);
+    record.hold(editor, 4);
+    if (hero) {
+        QTest::mousePress(hero, Qt::LeftButton, {}, hero->rect().center());
+        record.hold(editor, 2);
+        QTest::mouseRelease(hero, Qt::LeftButton, {}, hero->rect().center());
+    }
+
+    // The selected region opens in the editor.
+    record.index = 1000;
+    const qreal scale = qreal(demoCapture.width()) / demoSize.width();
+    const QRect crop(demoSelection.topLeft() * scale,
+                     demoSelection.size() * scale);
+    editor.setCapture(sampleCapture(demoCapture).copy(crop));
+    settle(100);
+    QWidget *canvas = canvasOf(editor);
+    const auto at = [&](qreal x, qreal y) { return canvas->mapTo(&editor, QPoint(int(x * canvas->width()), int(y * canvas->height()))); };
+    record.pointer = at(0.62, 0.86);
+    record.cursor = "cross";
+    record.hold(editor, 10);
+
+    const auto markWith = [&](const QString &tool, QPointF from, QPointF to, int steps) {
+        QWidget *button = namedWidget(editor, tool);
+        record.glide(editor, &editor, centerOf(editor, button), 10);
+        if (auto *toolButton = qobject_cast<QAbstractButton *>(button)) {
+            toolButton->click();
+        }
+        record.hold(editor, 4);
+        record.glide(editor, nullptr, at(from.x(), from.y()), 10, "cross");
+        QTest::mousePress(canvas, Qt::LeftButton, {}, canvas->mapFrom(&editor, record.pointer));
+        QEasingCurve curve(QEasingCurve::InOutCubic);
+        const QPoint start = record.pointer;
+        const QPoint end = at(to.x(), to.y());
+        for (int i = 1; i <= steps; ++i) {
+            record.pointer = start + (end - start) * curve.valueForProgress(qreal(i) / steps);
+            QTest::mouseMove(canvas, canvas->mapFrom(&editor, record.pointer));
+            QTest::qWait(30);
+            record.frame(editor);
+        }
+        QTest::mouseRelease(canvas, Qt::LeftButton, {}, canvas->mapFrom(&editor, record.pointer));
+        record.hold(editor, 4);
+    };
+    markWith(QStringLiteral("Redact"), {0.522, 0.192}, {0.735, 0.243}, 12);
+    markWith(QStringLiteral("Blur"), {0.522, 0.282}, {0.735, 0.525}, 12);
+    markWith(QStringLiteral("Arrow"), {0.60, 0.80}, {0.405, 0.635}, 14);
+
+    QWidget *copy = namedWidget(editor, QStringLiteral("Copy"));
+    record.glide(editor, &editor, centerOf(editor, copy), 12);
+    record.hold(editor, 2);
+    if (auto *button = qobject_cast<QAbstractButton *>(copy)) {
+        button->click();
+    }
+    // End while the confirmation is still showing; the composer holds the last frame.
+    record.hold(editor, 10);
+}
+
 // The overlay needs the offscreen platform, so it renders in a separate run: screenframe_shots <dir> --region
 void regionShots()
 {
@@ -316,6 +498,14 @@ int main(int argc, char **argv)
     QDir().mkpath(outputDirectory);
     if (arguments.value(2) == QStringLiteral("--region")) {
         regionShots();
+        return 0;
+    }
+    if (arguments.value(2) == QStringLiteral("--demo-region")) {
+        regionDemo(outputDirectory);
+        return 0;
+    }
+    if (arguments.value(2) == QStringLiteral("--demo-editor")) {
+        editorDemo(outputDirectory);
         return 0;
     }
     editorShots();
