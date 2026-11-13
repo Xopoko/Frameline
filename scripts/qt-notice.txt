@@ -1,13 +1,14 @@
 ScreenFrame uses the shared libraries and plugins of Qt Base @QT_VERSION@,
 Copyright (C) The Qt Company Ltd. and other contributors, under the GNU Lesser
 General Public License version 3. The GNU GPL and LGPL texts are included in
-upstream/LICENSES. THIRD-PARTY.txt, qtbase.spdx.json and upstream/ contain
-upstream notices and license texts for code included in Qt Base, including
-FreeType where enabled. Qt's SDK build options are in qt-build-options.txt.
+upstream/LICENSES. THIRD-PARTY.txt and upstream/ contain upstream notices and
+license texts for code included in Qt Base, including FreeType where enabled.
+The SDK build options are in qt-build-options.txt.
 
-The matching Qt Base source archive, qtbase-everywhere-src-@QT_VERSION@.tar.xz,
-is supplied beside the ScreenFrame Windows and macOS binary downloads. The
-packaged Qt binaries come from the official shared Qt SDK for this version.
+The matching source bundle, qtbase-@QT_VERSION@-screenframe-source.tar.xz,
+is supplied beside the ScreenFrame Windows and macOS binary downloads. It
+contains the upstream source archive, Qt's security patches for CVE-2026-105924,
+CVE-2026-105943 and CVE-2026-116337, and scripts to reproduce the shared Qt build.
 
 You may replace the Qt libraries with interface-compatible modified builds.
 On Windows, extract the ZIP, replace the Qt DLLs in bin and the matching

@@ -30,16 +30,50 @@ jobs:
           version=$(sed -n 's/^project(ScreenFrame VERSION \([0-9.]*\) LANGUAGES CXX)$/\1/p' CMakeLists.txt)
           test -n "$version"
           echo "SCREENFRAME_VERSION=$version" >> "$GITHUB_ENV"
-      - name: Prepare official Qt SDK
+      - name: Restore Qt SDK
+        id: qt-cache
         if: matrix.qt-sdk
+        uses: actions/cache@v4
+        with:
+          path: release-qt/sdk
+          key: release-qt-${{ matrix.target }}-${{ hashFiles('scripts/release-qt.py', 'scripts/build-release-qt.py') }}
+      - name: Prepare patched Qt sources
+        if: matrix.qt-sdk && (steps.qt-cache.outputs.cache-hit != 'true' || matrix.target != 'macos-intel-test')
+        shell: bash
+        run: python scripts/release-qt.py source release-qt
+      - name: Enter Visual C++ developer environment
+        if: runner.os == 'Windows'
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw 'Visual C++ 2022 tools were not found.' }
+          $before = @{}
+          Get-ChildItem Env: | ForEach-Object { $before[$_.Name] = $_.Value }
+          & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          Get-ChildItem Env: | Where-Object { $_.Name -ne 'Path' -and $_.Value -ne $before[$_.Name] } |
+            ForEach-Object { "$($_.Name)=$($_.Value)" } >> $env:GITHUB_ENV
+          ($env:Path -split ';') | Where-Object { $_ -and $_ -notin ($before.Path -split ';') } >> $env:GITHUB_PATH
+      - name: Build patched Windows Qt SDK
+        if: runner.os == 'Windows' && steps.qt-cache.outputs.cache-hit != 'true'
+        run: python scripts/build-release-qt.py release-qt/source release-qt/build release-qt/sdk --platform windows
+      - name: Build patched macOS Qt SDK
+        if: runner.os == 'macOS' && steps.qt-cache.outputs.cache-hit != 'true'
         shell: bash
         env:
-          QT_SDK: ${{ matrix.qt-sdk }}
+          RELEASE_TARGET: ${{ matrix.target }}
         run: |
-          python scripts/release-qt.py sdk "$QT_SDK" release-qt/sdk
-          if [[ "$RUNNER_OS" == Windows || "${{ matrix.target }}" == macos-universal ]]; then
-            qt_source=$(python scripts/release-qt.py source release-qt)
-            python scripts/release-qt.py notices "$qt_source" release-qt/sdk release-qt/notices
+          args=()
+          if [[ "$RELEASE_TARGET" == macos-intel-test ]]; then
+            args+=(--arch x86_64)
+          fi
+          python scripts/build-release-qt.py release-qt/source release-qt/build release-qt/sdk --platform macos "${args[@]}"
+      - name: Prepare Qt notices and corresponding source archive
+        if: matrix.qt-sdk && matrix.target != 'macos-intel-test'
+        shell: bash
+        run: |
+          python scripts/release-qt.py notices release-qt/source release-qt/sdk release-qt/notices
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            python scripts/release-qt.py archive release-qt dist
           fi
       - name: Install build dependencies on Ubuntu
         if: runner.os == 'Linux'
@@ -57,12 +91,7 @@ jobs:
           ctest --test-dir build -C Release --output-on-failure
       - name: Package Windows ZIP
         if: runner.os == 'Windows'
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
-          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (!$vs) { throw 'Visual C++ tools were not found.' }
-          & "$vs/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
-          ./scripts/package-windows.ps1 -BuildDirectory build -OutputZip "dist/ScreenFrame-$env:SCREENFRAME_VERSION-windows-x64.zip"
+        run: ./scripts/package-windows.ps1 -BuildDirectory build -OutputZip "dist/ScreenFrame-$env:SCREENFRAME_VERSION-windows-x64.zip"
       - name: Configure, build, and test on macOS
         if: runner.os == 'macOS'
         shell: bash
@@ -80,9 +109,7 @@ jobs:
           ctest --test-dir build --output-on-failure
       - name: Package universal macOS DMG
         if: matrix.target == 'macos-universal'
-        run: |
-          bash scripts/package-macos.sh build "dist/ScreenFrame-$SCREENFRAME_VERSION-macOS-universal.dmg"
-          cp "release-qt/qtbase-everywhere-src-"*.tar.xz dist/
+        run: bash scripts/package-macos.sh build "dist/ScreenFrame-$SCREENFRAME_VERSION-macOS-universal.dmg"
       - name: Configure, build, and test on Ubuntu
         if: runner.os == 'Linux'
         run: |
