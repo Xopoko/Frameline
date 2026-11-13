@@ -29,6 +29,8 @@ add_library(screenframe_core STATIC
     src/application.h
     src/capture.cpp
     src/capture.h
+    src/controls.cpp
+    src/controls.h
     src/editor.cpp
     src/editor.h
     src/libraryclient.cpp
@@ -45,6 +47,8 @@ add_library(screenframe_core STATIC
     src/settingswindow.h
     src/shortcuts.cpp
     src/shortcuts.h
+    src/theme.cpp
+    src/theme.h
 )
 target_include_directories(screenframe_core PUBLIC src)
 target_link_libraries(screenframe_core PUBLIC Qt6::Widgets PRIVATE Qt6::Network Qt6::Concurrent)
@@ -148,8 +152,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 if(BUILD_TESTING)
+    find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
     add_executable(screenframe_tests tests/screenframe_tests.cpp)
-    target_link_libraries(screenframe_tests PRIVATE screenframe_core)
+    target_link_libraries(screenframe_tests PRIVATE screenframe_core Qt6::Test)
+    # Renders every window to PNG for visual review: screenframe_shots <output-directory>
+    add_executable(screenframe_shots tools/shots.cpp)
+    target_link_libraries(screenframe_shots PRIVATE screenframe_core Qt6::Test)
     add_test(NAME screenframe_components COMMAND screenframe_tests)
     set_tests_properties(screenframe_components PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME screenframe_cli_help COMMAND screenframe --help)

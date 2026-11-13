@@ -4,10 +4,12 @@
 
 enum class LibraryTransport { Local, Ssh };
 
+constexpr int defaultLibraryPort = 18745;
+
 struct LibrarySettings {
     LibraryTransport transport = LibraryTransport::Local;
     QString sshHost;
-    int port = 18745;
+    int port = defaultLibraryPort;
     QString token;
     QString device;
     bool autoArchive = false;

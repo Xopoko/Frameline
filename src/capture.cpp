@@ -17,7 +17,7 @@
 #include <type_traits>
 
 namespace {
-QImage grabWindowsScreen(QScreen* screen)
+QImage grabWindowsScreen(QScreen *screen)
 {
     // On Windows Qt retains the monitor's native origin in its logical geometry.
     const auto origin = screen->geometry().topLeft();
@@ -49,7 +49,7 @@ QImage grabWindowsScreen(QScreen* screen)
     format.bmiHeader.biPlanes = 1;
     format.bmiHeader.biBitCount = 32;
     format.bmiHeader.biCompression = BI_RGB;
-    void* bits = nullptr;
+    void *bits = nullptr;
     std::unique_ptr<std::remove_pointer_t<HBITMAP>, decltype(&DeleteObject)> bitmap(
         CreateDIBSection(source.get(), &format, DIB_RGB_COLORS, &bits, nullptr, 0), DeleteObject);
     if (!bitmap || !bits)
@@ -66,18 +66,18 @@ QImage grabWindowsScreen(QScreen* screen)
         return {};
 
     // A GDI BGRX bitmap leaves the top byte unspecified. Qt RGB32 requires opaque pixels.
-    auto* pixels = static_cast<QRgb*>(bits);
+    auto *pixels = static_cast<QRgb *>(bits);
     const auto count = qsizetype(width) * height;
     for (qsizetype index = 0; index < count; ++index)
         pixels[index] |= 0xff000000u;
 
-    QImage image(static_cast<uchar*>(bits), width, height, qsizetype(width) * sizeof(QRgb),
-                 QImage::Format_RGB32, [](void* handle) { DeleteObject(handle); }, bitmap.get());
+    QImage image(static_cast<uchar *>(bits), width, height, qsizetype(width) * sizeof(QRgb),
+                 QImage::Format_RGB32, [](void *handle) { DeleteObject(handle); }, bitmap.get());
     if (!image.isNull())
         bitmap.release();
     return image;
 }
-}
+} // namespace
 #endif
 
 bool ScreenCapture::usesScreenshotPortal()
@@ -89,18 +89,18 @@ bool ScreenCapture::usesScreenshotPortal()
 #endif
 }
 
-void ScreenCapture::capture(bool region, QWidget* portalParent)
+void ScreenCapture::capture(bool region, QWidget *portalParent)
 {
 #if defined(Q_OS_LINUX)
     if (usesScreenshotPortal()) {
-        auto* request = new Portal::Request(this);
-        const auto message = tr("Wayland did not provide a screenshot. Check screen capture permissions in system settings.");
+        auto *request = new Portal::Request(this);
+        const auto message = QStringLiteral("Wayland did not provide a screenshot. Check screen capture permissions in system settings.");
         const auto responseFailure = portalParent
-            ? tr("Wayland denied screen capture. Allow ScreenFrame to capture the screen in system settings and try again.")
-            : tr("Wayland denied screen capture. On the first run, try again from the active ScreenFrame window.");
+            ? QStringLiteral("Wayland denied screen capture. Allow ScreenFrame to capture the screen in system settings and try again.")
+            : QStringLiteral("Wayland denied screen capture. On the first run, try again from the active ScreenFrame window.");
         connect(request, &Portal::Request::failed, this, [this, message] { emit failed(message); });
         connect(request, &Portal::Request::responded, this,
-                [this, responseFailure](uint code, const QVariantMap& results) {
+                [this, responseFailure](uint code, const QVariantMap &results) {
             if (code == 1) {
                 emit cancelled();
                 return;
@@ -110,7 +110,7 @@ void ScreenCapture::capture(bool region, QWidget* portalParent)
                 return;
             }
             if (code != 0) {
-                emit failed(tr("Could not get a screenshot from Wayland."));
+                emit failed(QStringLiteral("Could not get a screenshot from Wayland."));
                 return;
             }
             const QUrl uri(results.value(QStringLiteral("uri")).toString());
@@ -118,7 +118,7 @@ void ScreenCapture::capture(bool region, QWidget* portalParent)
             if (uri.isLocalFile())
                 image.load(uri.toLocalFile());
             if (image.isNull()) {
-                emit failed(tr("Could not open the screenshot from Wayland."));
+                emit failed(QStringLiteral("Could not open the screenshot from Wayland."));
                 return;
             }
             image.setDevicePixelRatio(1);
@@ -136,16 +136,16 @@ void ScreenCapture::capture(bool region, QWidget* portalParent)
     Q_UNUSED(portalParent);
 #endif
 
-    auto* activeScreen = QGuiApplication::screenAt(QCursor::pos());
+    auto *activeScreen = QGuiApplication::screenAt(QCursor::pos());
     if (!activeScreen)
         activeScreen = QGuiApplication::primaryScreen();
-    const auto screens = region ? QGuiApplication::screens() : QList<QScreen*>{activeScreen};
+    const auto screens = region ? QGuiApplication::screens() : QList<QScreen *>{activeScreen};
 
 #if defined(Q_OS_MACOS)
     captureMacScreens(this, screens);
 #else
     QList<CaptureFrame> frames;
-    for (auto* screen : screens) {
+    for (auto *screen : screens) {
         if (!screen)
             continue;
         QImage image;
@@ -160,7 +160,7 @@ void ScreenCapture::capture(bool region, QWidget* portalParent)
         }
     }
     if (frames.isEmpty())
-        emit failed(tr("Could not capture the screen."));
+        emit failed(QStringLiteral("Could not capture the screen."));
     else
         emit captured(frames);
 #endif

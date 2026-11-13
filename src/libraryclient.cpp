@@ -54,30 +54,30 @@ bool writeBytes(const QString &path, const QByteArray &bytes)
 QString stageCapture(const QString &queue, const QString &id, const QImage &image, const QJsonObject &metadata)
 {
     if (image.width() > 32768 || image.height() > 32768 || qint64(image.width()) * image.height() > 100'000'000)
-        return QObject::tr("The screenshot is too large for the shared library.");
+        return QStringLiteral("The screenshot is too large for the shared library.");
     if (!QDir().mkpath(queue))
-        return QObject::tr("Could not create the local screenshot queue.");
+        return QStringLiteral("Could not create the local screenshot queue.");
 #ifndef Q_OS_WIN
     if (!QFile::setPermissions(queue, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner))
-        return QObject::tr("Could not make the local screenshot queue private.");
+        return QStringLiteral("Could not make the local screenshot queue private.");
 #endif
     QTemporaryDir staging(QDir(queue).filePath(QStringLiteral(".staging-XXXXXX")));
     if (!staging.isValid())
-        return QObject::tr("Could not create a local staging folder for the screenshot.");
+        return QStringLiteral("Could not create a local staging folder for the screenshot.");
     QString error;
     const QString original = staging.filePath(QStringLiteral("image.png"));
     if (!savePng(image, original, &error))
-        return QObject::tr("Could not queue the screenshot. %1").arg(error);
+        return QStringLiteral("Could not queue the screenshot. %1").arg(error);
     if (QFileInfo(original).size() > maxImage)
-        return QObject::tr("The encoded screenshot exceeds the library's 64 MiB limit.");
+        return QStringLiteral("The encoded screenshot exceeds the library's 64 MiB limit.");
 
     const QImage thumb = image.width() > 360 || image.height() > 240
         ? image.scaled(360, 240, Qt::KeepAspectRatio, Qt::SmoothTransformation) : image;
     if (!savePng(thumb, staging.filePath(QStringLiteral("thumbnail.png")), &error)
         || !writeBytes(staging.filePath(QStringLiteral("metadata.json")), QJsonDocument(metadata).toJson(QJsonDocument::Compact)))
-        return QObject::tr("Could not save the screenshot metadata or preview. %1").arg(error);
+        return QStringLiteral("Could not save the screenshot metadata or preview. %1").arg(error);
     if (!QDir().rename(staging.path(), QDir(queue).filePath(id)))
-        return QObject::tr("Could not add the screenshot to the local queue.");
+        return QStringLiteral("Could not add the screenshot to the local queue.");
     return {};
 }
 
@@ -85,13 +85,13 @@ QString responseError(QNetworkReply *reply)
 {
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     if (status == 401 || status == 403)
-        return QObject::tr("Library access was denied. Check the device's library configuration.");
+        return QStringLiteral("Library access was denied. Check the device's library configuration.");
     if (status == 404)
-        return QObject::tr("The screenshot is no longer available.");
+        return QStringLiteral("The screenshot is no longer available.");
     if (status >= 400)
-        return QObject::tr("The library server returned HTTP %1.").arg(status);
+        return QStringLiteral("The library server returned HTTP %1.").arg(status);
     return reply->error() == QNetworkReply::NoError ? QString{}
-        : QObject::tr("Could not reach the shared library. Check that the library server is running and reachable.");
+        : QStringLiteral("Could not reach the shared library. Check that the library server is running and reachable.");
 }
 
 struct Download {
@@ -126,7 +126,7 @@ struct LibraryClient::State : QObject {
         connect(&retry, &QTimer::timeout, this, [this] { pump(); });
         timeout.setSingleShot(true);
         connect(&timeout, &QTimer::timeout, this, [this] {
-            failTunnel(tr("The SSH connection to the library timed out."));
+            failTunnel(QStringLiteral("The SSH connection to the library timed out."));
             ssh.kill();
         });
         ssh.setProgram(sshProgram());
@@ -145,17 +145,17 @@ struct LibraryClient::State : QObject {
                 timeout.stop();
                 deliverTunnel({});
             } else if (handshake.size() > 4096) {
-                failTunnel(tr("Unexpected response from the private SSH connection."));
+                failTunnel(QStringLiteral("Unexpected response from the private SSH connection."));
                 ssh.kill();
             }
         });
         connect(&ssh, &QProcess::readyReadStandardError, this, [this] { ssh.readAllStandardError(); });
         connect(&ssh, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
             if (error == QProcess::FailedToStart)
-                failTunnel(tr("Could not start OpenSSH for the library."));
+                failTunnel(QStringLiteral("Could not start OpenSSH for the library."));
         });
         connect(&ssh, &QProcess::finished, this, [this] {
-            failTunnel(tr("Could not connect to the library using the configured SSH host."));
+            failTunnel(QStringLiteral("Could not connect to the library using the configured SSH host."));
         });
     }
 
@@ -261,7 +261,7 @@ struct LibraryClient::State : QObject {
     void ensureTunnel(Ready callback)
     {
         if (token.isEmpty()) {
-            callback(0, tr("This device has no shared library configuration."));
+            callback(0, QStringLiteral("This device has no shared library configuration."));
             return;
         }
         if (host.isEmpty() || tunnelReady) {
@@ -274,7 +274,7 @@ struct LibraryClient::State : QObject {
 
         QTcpServer reservation;
         if (!reservation.listen(QHostAddress::LocalHost, 0)) {
-            failTunnel(tr("Could not reserve a local port for the library connection."));
+            failTunnel(QStringLiteral("Could not reserve a local port for the library connection."));
             return;
         }
         localPort = reservation.serverPort();
@@ -339,7 +339,7 @@ struct LibraryClient::State : QObject {
                 result->bytes += reply->read(limit + 1 - result->bytes.size());
                 if (result->bytes.size() > limit) {
                     result->bytes.clear();
-                    result->error = tr("The library response exceeded the download limit.");
+                    result->error = QStringLiteral("The library response exceeded the download limit.");
                     reply->abort();
                 }
             };
@@ -404,14 +404,14 @@ struct LibraryClient::State : QObject {
         const QDir folder(QDir(queue).filePath(activeId));
         QFile metadata(folder.filePath(QStringLiteral("metadata.json")));
         if (!metadata.open(QIODevice::ReadOnly) || metadata.size() > 4096) {
-            uploadFinished(tr("A queued screenshot is missing its metadata."));
+            uploadFinished(QStringLiteral("A queued screenshot is missing its metadata."));
             return;
         }
         const auto object = QJsonDocument::fromJson(metadata.readAll()).object();
         const QString part = thumbnail ? QStringLiteral("thumbnail") : QStringLiteral("image");
         auto file = std::make_unique<QFile>(folder.filePath(part + QStringLiteral(".png")));
         if (!file->open(QIODevice::ReadOnly)) {
-            uploadFinished(tr("A queued screenshot file could not be read."));
+            uploadFinished(QStringLiteral("A queued screenshot file could not be read."));
             return;
         }
         auto uploadRequest = request(local, QStringLiteral("/v1/screenshots/%1/%2").arg(activeId, part));
@@ -433,7 +433,7 @@ struct LibraryClient::State : QObject {
             const int code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
             QString error = responseError(reply);
             if (error.isEmpty() && code != 201 && code != 204)
-                error = tr("The library did not acknowledge the screenshot upload.");
+                error = QStringLiteral("The library did not acknowledge the screenshot upload.");
             reply->deleteLater();
             if (error.isEmpty() && !thumbnail)
                 upload(local, true);
@@ -450,7 +450,7 @@ struct LibraryClient::State : QObject {
                 QDir(QDir(queue).filePath(sent)).removeRecursively();
                 emit owner.libraryChanged();
             } else {
-                error = tr("The screenshot was uploaded, but its local queue entry could not be removed.");
+                error = QStringLiteral("The screenshot was uploaded, but its local queue entry could not be removed.");
             }
         }
         active.reset();
@@ -464,10 +464,10 @@ struct LibraryClient::State : QObject {
     const QString settingsDirectory;
     const QString storageKey;
     const QString queue;
-    QString host;
-    int port = 18745;
-    QString device;
-    QByteArray token;
+    const QString host;
+    const int port;
+    const QString device;
+    const QByteArray token;
     const bool autoArchive;
     QThreadPool writer;
     QList<Write> writes;
@@ -533,7 +533,7 @@ void LibraryClient::list(const QString &cursor, QObject *context, ListCallback c
         }
         const auto page = QJsonDocument::fromJson(response.bytes).object();
         if (!page.value(QStringLiteral("items")).isArray()) {
-            callback({}, {}, tr("The library returned an invalid screenshot list."));
+            callback({}, {}, QStringLiteral("The library returned an invalid screenshot list."));
             return;
         }
         QList<LibraryItem> items;
@@ -554,7 +554,7 @@ void LibraryClient::list(const QString &cursor, QObject *context, ListCallback c
 void LibraryClient::image(const QString &id, bool thumbnail, QObject *context, ImageCallback callback)
 {
     if (!isId(id)) {
-        callback({}, tr("Invalid screenshot ID."));
+        callback({}, QStringLiteral("Invalid screenshot ID."));
         return;
     }
     const QPointer<QObject> guard(context);
@@ -570,7 +570,7 @@ void LibraryClient::image(const QString &id, bool thumbnail, QObject *context, I
             const QImage image = decoded->result();
             decoded->deleteLater();
             if (guard)
-                callback(image, image.isNull() ? tr("The library image could not be decoded.") : QString{});
+                callback(image, image.isNull() ? QStringLiteral("The library image could not be decoded.") : QString{});
         });
         decoded->setFuture(QtConcurrent::run([bytes = std::move(response.bytes)] { return QImage::fromData(bytes); }));
     });

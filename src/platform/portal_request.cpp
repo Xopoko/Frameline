@@ -13,7 +13,7 @@ namespace Portal {
 namespace {
 const auto requestInterface = QStringLiteral("org.freedesktop.portal.Request");
 const auto responseSignal = QStringLiteral("Response");
-}
+} // namespace
 
 bool isWayland()
 {
@@ -30,7 +30,7 @@ QDBusConnection connection()
 {
     auto bus = QDBusConnection::sessionBus();
     static bool registered = false;
-    static auto* watcher = new QDBusServiceWatcher(
+    static auto *watcher = new QDBusServiceWatcher(
         service, bus, QDBusServiceWatcher::WatchForUnregistration, qApp);
     static const auto resetRegistration = QObject::connect(
         watcher, &QDBusServiceWatcher::serviceUnregistered, [] { registered = false; });
@@ -47,7 +47,7 @@ QDBusConnection connection()
     return bus;
 }
 
-Request::Request(QObject* parent)
+Request::Request(QObject *parent)
     : QObject(parent), bus_(connection())
 {
 }
@@ -62,7 +62,7 @@ Request::~Request()
     unsubscribe();
 }
 
-void Request::start(const QString& interface, const QString& method, QVariantList arguments,
+void Request::start(const QString &interface, const QString &method, QVariantList arguments,
                     QVariantMap options)
 {
     if (!bus_.isConnected()) {
@@ -83,7 +83,7 @@ void Request::start(const QString& interface, const QString& method, QVariantLis
     options.insert(QStringLiteral("handle_token"), handle);
     arguments.append(options);
     message.setArguments(arguments);
-    auto* call = new QDBusPendingCallWatcher(bus_.asyncCall(message), this);
+    auto *call = new QDBusPendingCallWatcher(bus_.asyncCall(message), this);
     connect(call, &QDBusPendingCallWatcher::finished, this, [this, call] {
         const QDBusPendingReply<QDBusObjectPath> reply = *call;
         call->deleteLater();
@@ -103,7 +103,7 @@ void Request::start(const QString& interface, const QString& method, QVariantLis
     });
 }
 
-bool Request::subscribe(const QString& signalPath)
+bool Request::subscribe(const QString &signalPath)
 {
     if (!bus_.connect(service, signalPath, requestInterface, responseSignal,
                       this, SLOT(receiveResponse(uint,QVariantMap))))
@@ -121,7 +121,7 @@ void Request::unsubscribe()
     }
 }
 
-void Request::receiveResponse(uint code, const QVariantMap& results)
+void Request::receiveResponse(uint code, const QVariantMap &results)
 {
     if (finished_)
         return;
@@ -143,4 +143,4 @@ void Request::fail()
     deleteLater();
     emit failed();
 }
-}
+} // namespace Portal

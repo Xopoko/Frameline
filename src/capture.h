@@ -19,11 +19,11 @@ class ScreenCapture : public QObject {
 public:
     using QObject::QObject;
     static bool usesScreenshotPortal();
-    void capture(bool region, QWidget* portalParent = nullptr);
+    void capture(bool region, QWidget *portalParent = nullptr);
 
 signals:
-    void captured(const QList<CaptureFrame>& frames);
-    void failed(const QString& message);
-    void portalPermissionRequired(const QString& message);
+    void captured(const QList<CaptureFrame> &frames);
+    void failed(const QString &message);
+    void portalPermissionRequired(const QString &message);
     void cancelled();
 };

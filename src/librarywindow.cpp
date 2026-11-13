@@ -1,22 +1,22 @@
 #include "librarywindow.h"
 
+#include "controls.h"
 #include "libraryclient.h"
 #include "pngexport.h"
+#include "theme.h"
 
 #include <QAbstractListModel>
+#include <QApplication>
 #include <QCache>
-#include <QDir>
-#include <QFileDialog>
-#include <QFrame>
+#include <QClipboard>
 #include <QHBoxLayout>
 #include <QImage>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QListView>
 #include <QLocale>
-#include <QMessageBox>
 #include <QPainter>
-#include <QPushButton>
+#include <QPainterPath>
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -24,7 +24,6 @@
 #include <QShortcut>
 #include <QShowEvent>
 #include <QStackedWidget>
-#include <QStandardPaths>
 #include <QStyledItemDelegate>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -35,9 +34,10 @@
 
 namespace {
 
-constexpr int thumbnailWidth = 112;
-constexpr int thumbnailHeight = 64;
-constexpr int rowHeight = 84;
+constexpr int minimumTileWidth = 216;
+constexpr int gutter = 8;
+constexpr int metaHeight = 48;
+constexpr QSize thumbnailBounds(480, 300);
 
 QString itemTitle(const LibraryItem &item)
 {
@@ -45,25 +45,41 @@ QString itemTitle(const LibraryItem &item)
         return QStringLiteral("Full screen");
     }
     if (item.kind == QStringLiteral("region")) {
-        return QStringLiteral("Screen region");
+        return QStringLiteral("Region");
     }
     return QStringLiteral("Screenshot");
 }
 
-QString itemDetails(const LibraryItem &item)
+QString itemTime(const LibraryItem &item)
 {
-    const QString timestamp = QLocale(QLocale::English).toString(item.capturedAt.toLocalTime(),
-                                                                QStringLiteral("d MMM yyyy, HH:mm"));
-    return QStringLiteral("%1  ·  %2  ·  %3 × %4 px")
-        .arg(timestamp, item.device).arg(item.size.width()).arg(item.size.height());
+    const QDateTime local = item.capturedAt.toLocalTime();
+    const QDate today = QDate::currentDate();
+    const QString time = local.toString(QStringLiteral("HH:mm"));
+    if (local.date() == today) {
+        return QStringLiteral("Today, %1").arg(time);
+    }
+    if (local.date() == today.addDays(-1)) {
+        return QStringLiteral("Yesterday, %1").arg(time);
+    }
+    if (local.date().year() == today.year()) {
+        return QLocale().toString(local, QStringLiteral("d MMM, HH:mm"));
+    }
+    return QLocale().toString(local, QStringLiteral("d MMM yyyy"));
 }
 
-QLabel *label(const QString &text, const char *style, QWidget *parent)
+QString itemSize(const LibraryItem &item)
 {
-    auto *result = new QLabel(text, parent);
-    result->setObjectName(QString::fromLatin1(style));
-    result->setTextFormat(Qt::PlainText);
-    return result;
+    return QStringLiteral("%1 × %2").arg(item.size.width()).arg(item.size.height());
+}
+
+QString itemDetails(const LibraryItem &item)
+{
+    QStringList parts{itemTime(item)};
+    if (!item.device.isEmpty()) {
+        parts << item.device;
+    }
+    parts << itemSize(item) + QStringLiteral(" px");
+    return parts.join(QStringLiteral("  ·  "));
 }
 
 class LibraryModel final : public QAbstractListModel {
@@ -81,7 +97,7 @@ public:
             return {};
         }
         const auto &item = items.at(index.row());
-        if (role == Qt::DisplayRole) {
+        if (role == Qt::DisplayRole || role == Qt::AccessibleTextRole) {
             return itemTitle(item);
         }
         if (role == Qt::ToolTipRole || role == Qt::AccessibleDescriptionRole) {
@@ -109,98 +125,198 @@ public:
     }
 
     const QImage *thumbnail(const QString &id) const { return thumbnails.object(id); }
+    bool failed(const QString &id) const { return failures.contains(id); }
 
     void setThumbnail(int row, QImage image)
     {
         if (image.isNull()) {
             return;
         }
-        const QSize size(thumbnailWidth * 2, thumbnailHeight * 2);
         image.setDevicePixelRatio(1);
-        if (image.width() > size.width() || image.height() > size.height()) {
-            image = image.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        if (image.width() > thumbnailBounds.width() || image.height() > thumbnailBounds.height()) {
+            image = image.scaled(thumbnailBounds, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         }
         thumbnails.insert(at(row).id, new QImage(std::move(image)));
         const QModelIndex updated = index(row);
         emit dataChanged(updated, updated, {Qt::DecorationRole});
     }
 
+    void setFailed(int row)
+    {
+        failures.insert(at(row).id);
+        const QModelIndex updated = index(row);
+        emit dataChanged(updated, updated, {Qt::DecorationRole});
+    }
+
+    void clearFailures() { failures.clear(); }
+
 private:
     QList<LibraryItem> items;
-    QCache<QString, QImage> thumbnails{80};
+    QSet<QString> failures;
+    QCache<QString, QImage> thumbnails{120};
 };
 
 class LibraryDelegate final : public QStyledItemDelegate {
 public:
-    using QStyledItemDelegate::QStyledItemDelegate;
+    LibraryDelegate(QListView *view) : QStyledItemDelegate(view), view(view) {}
 
     QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override
     {
-        return QSize(320, rowHeight);
+        return view->gridSize();
     }
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
+        const theme::Palette &c = theme::colors();
         const auto *model = static_cast<const LibraryModel *>(index.model());
         const auto &item = model->at(index.row());
         const bool selected = option.state.testFlag(QStyle::State_Selected);
-        const bool focused = option.state.testFlag(QStyle::State_HasFocus);
         const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing);
         painter->setRenderHint(QPainter::SmoothPixmapTransform);
-        const QRect card = option.rect.adjusted(1, 4, -1, -4);
-        painter->setBrush(selected ? QColor("#342752") : QColor(hovered ? "#232942" : "#1b2032"));
-        painter->setPen(QColor(focused ? "#c4a8ff" : selected ? "#7053a9" : "#30384f"));
-        painter->drawRoundedRect(card.adjusted(0, 0, -1, -1), 8, 8);
 
-        const QRect preview(card.left() + 7, card.center().y() - thumbnailHeight / 2,
-                            thumbnailWidth, thumbnailHeight);
-        painter->fillRect(preview, QColor("#111421"));
-        if (const auto *thumbnail = model->thumbnail(item.id)) {
-            QSize fitted = thumbnail->size();
-            fitted.scale(preview.size(), Qt::KeepAspectRatio);
-            QRect destination(QPoint{}, fitted);
-            destination.moveCenter(preview.center());
+        const QRectF card = QRectF(option.rect).adjusted(gutter, gutter, -gutter, -gutter / 2.0);
+        const QRectF frame(card.left(), card.top(), card.width(), card.height() - metaHeight);
+        QPainterPath shape;
+        shape.addRoundedRect(frame, 10, 10);
+        painter->fillPath(shape, c.dark ? c.raised : c.controlHover);
+        painter->save();
+        painter->setClipPath(shape);
+        if (const QImage *thumbnail = model->thumbnail(item.id)) {
+            QSizeF fitted = thumbnail->size();
+            fitted.scale(frame.size().shrunkBy(QMarginsF(10, 10, 10, 10)), Qt::KeepAspectRatio);
+            QRectF destination(QPointF(), fitted);
+            destination.moveCenter(frame.center());
+            painter->setPen(Qt::NoPen);
+            theme::paintShadow(*painter, destination, 2, 6, 2, c.dark ? 1.2 : 0.7);
             painter->drawImage(destination, *thumbnail);
         } else {
-            QRect glyph(0, 0, 20, 14);
-            glyph.moveCenter(preview.center());
-            painter->setPen(QPen(QColor("#727d9d"), 1.25));
+            const QRectF glyph(frame.center().x() - 13, frame.center().y() - 13, 26, 26);
+            paintIcon(*painter, model->failed(item.id) || !item.hasThumbnail ? Icon::Library : Icon::Region, glyph,
+                      c.textFaint, 1.6);
+        }
+        if (hovered && !selected) {
+            painter->fillRect(frame, theme::withAlpha(c.text, 0.04));
+        }
+        painter->restore();
+        if (selected) {
+            painter->setPen(QPen(c.accent, 2));
             painter->setBrush(Qt::NoBrush);
-            painter->drawRoundedRect(glyph, 2, 2);
-            painter->drawLine(glyph.bottomLeft() + QPoint(4, -3), glyph.center() + QPoint(1, -1));
-            painter->drawLine(glyph.center() + QPoint(1, -1), glyph.bottomRight() + QPoint(-3, -3));
+            painter->drawRoundedRect(frame.adjusted(-2, -2, 2, 2), 12, 12);
+        } else {
+            painter->setPen(QPen(hovered ? c.borderStrong : theme::withAlpha(c.border, 0.8), 1));
+            painter->setBrush(Qt::NoBrush);
+            painter->drawRoundedRect(frame.adjusted(0.5, 0.5, -0.5, -0.5), 10, 10);
         }
 
-        const int x = preview.right() + 15;
-        const int textWidth = card.right() - x - 13;
-        QFont titleFont(option.font);
-        titleFont.setWeight(QFont::DemiBold);
+        const qreal textTop = frame.bottom() + 9;
+        const int textWidth = int(card.width()) - 2;
+        const QFont titleFont = theme::font(13, theme::Weight::Semibold);
+        const QFont metaFont = theme::font(12);
+        const QString title = itemTitle(item);
+        const int titleWidth = QFontMetrics(titleFont).horizontalAdvance(title);
         painter->setFont(titleFont);
-        painter->setPen(QColor("#f1edff"));
-        painter->drawText(QRect(x, card.top() + 11, textWidth, 24), Qt::AlignVCenter,
-                          QFontMetrics(titleFont).elidedText(itemTitle(item), Qt::ElideRight, textWidth));
-        painter->setFont(option.font);
-        painter->setPen(QColor("#b2bbd8"));
-        painter->drawText(QRect(x, card.top() + 37, textWidth, 23), Qt::AlignVCenter,
-                          option.fontMetrics.elidedText(itemDetails(item), Qt::ElideRight, textWidth));
+        painter->setPen(c.text);
+        painter->drawText(QRectF(card.left() + 1, textTop, textWidth, 18), Qt::AlignLeft | Qt::AlignVCenter, title);
+        painter->setFont(metaFont);
+        painter->setPen(c.textMuted);
+        const int sizeLeft = titleWidth + 8;
+        painter->drawText(QRectF(card.left() + 1 + sizeLeft, textTop, textWidth - sizeLeft, 18),
+                          Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(metaFont).elidedText(itemSize(item), Qt::ElideRight, textWidth - sizeLeft));
+        QString meta = itemTime(item);
+        if (!item.device.isEmpty()) {
+            meta += QStringLiteral("  ·  ") + item.device;
+        }
+        painter->drawText(QRectF(card.left() + 1, textTop + 19, textWidth, 17), Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(metaFont).elidedText(meta, Qt::ElideRight, textWidth));
         painter->restore();
     }
+
+private:
+    QListView *view;
 };
 
-class LibraryList final : public QListView {
+class LibraryGrid final : public QListView {
 public:
-    using QListView::QListView;
+    explicit LibraryGrid(QWidget *parent) : QListView(parent)
+    {
+        setViewMode(QListView::IconMode);
+        setMovement(QListView::Static);
+        setResizeMode(QListView::Adjust);
+        setFlow(QListView::LeftToRight);
+        setWrapping(true);
+        setUniformItemSizes(true);
+        setSpacing(0);
+        setSelectionMode(QAbstractItemView::SingleSelection);
+        setFrameShape(QFrame::NoFrame);
+        setMouseTracking(true);
+        setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setViewportMargins(10, 8, 10, 12);
+        verticalScrollBar()->setSingleStep(24);
+        setGridSize(QSize(minimumTileWidth, minimumTileWidth));
+    }
+
     std::function<void()> resized;
 
+    int columns() const { return std::max(1, viewport()->width() / std::max(1, gridSize().width())); }
+
 protected:
+    bool viewportEvent(QEvent *event) override
+    {
+        // The viewport also narrows when the scroll bar appears, without resizing the view.
+        if (event->type() == QEvent::Resize) {
+            fitGrid();
+        }
+        return QListView::viewportEvent(event);
+    }
+
     void resizeEvent(QResizeEvent *event) override
     {
         QListView::resizeEvent(event);
+        fitGrid();
+    }
+
+private:
+    void fitGrid()
+    {
+        // Icon mode reserves room for a vertical scroll bar again when it lays out a wrapping grid.
+        const int available = viewport()->width() - verticalScrollBar()->sizeHint().width() - 1;
+        const int columns = std::max(1, available / minimumTileWidth);
+        const int tile = available / columns;
+        const int imageHeight = (tile - 2 * gutter) * 10 / 16;
+        const QSize grid(tile, imageHeight + metaHeight + gutter + gutter / 2);
+        if (grid != gridSize()) {
+            setGridSize(grid);
+        }
         if (resized) {
             resized();
         }
+    }
+};
+
+// A single line that ends in an ellipsis when it does not fit.
+class ElidedLabel final : public QLabel {
+public:
+    ElidedLabel(const char *role, QWidget *parent) : QLabel(parent)
+    {
+        setObjectName(QString::fromLatin1(role));
+        setTextFormat(Qt::PlainText);
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    }
+
+    QSize minimumSizeHint() const override { return QSize(0, QLabel::minimumSizeHint().height()); }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setPen(palette().color(foregroundRole()));
+        painter.setFont(font());
+        const QRect area = contentsRect();
+        painter.drawText(area, Qt::AlignLeft | Qt::AlignVCenter, fontMetrics().elidedText(text(), Qt::ElideRight, area.width()));
     }
 };
 
@@ -220,11 +336,12 @@ protected:
 
 class ImageView final : public QScrollArea {
 public:
-    explicit ImageView(QWidget *parent) : QScrollArea(parent), canvas(new ImageCanvas)
+    explicit ImageView(QWidget *parent) : QScrollArea(parent), holder(new QWidget), canvas(new ImageCanvas(holder))
     {
         setFrameShape(QFrame::NoFrame);
         setAlignment(Qt::AlignCenter);
-        setWidget(canvas);
+        setWidget(holder);
+        holder->setAutoFillBackground(false);
         canvas->setAccessibleName(QStringLiteral("Screenshot preview"));
     }
 
@@ -245,6 +362,21 @@ public:
     const QImage &image() const { return canvas->image; }
 
 protected:
+    bool viewportEvent(QEvent *event) override
+    {
+        if (event->type() != QEvent::Paint) {
+            return QScrollArea::viewportEvent(event);
+        }
+        const theme::Palette &c = theme::colors();
+        QPainter painter(viewport());
+        painter.fillRect(static_cast<QPaintEvent *>(event)->rect(), c.stage);
+        if (!canvas->image.isNull()) {
+            const QRect frame(canvas->mapTo(viewport(), QPoint(0, 0)), canvas->size());
+            theme::paintShadow(painter, QRectF(frame), 3, 16, 5, c.dark ? 1.6 : 1.1);
+        }
+        return true;
+    }
+
     void resizeEvent(QResizeEvent *event) override
     {
         QScrollArea::resizeEvent(event);
@@ -252,6 +384,8 @@ protected:
     }
 
 private:
+    static constexpr int padding = 32;
+    QWidget *holder;
     ImageCanvas *canvas;
     bool fit = true;
 
@@ -259,56 +393,73 @@ private:
     {
         const QSize imageSize = image().size();
         if (image().isNull()) {
-            canvas->resize(1, 1);
+            holder->setFixedSize(1, 1);
+            canvas->setGeometry(0, 0, 1, 1);
             return;
         }
         const qreal dpr = devicePixelRatioF();
         QSize target(qMax(1, qRound(imageSize.width() / dpr)), qMax(1, qRound(imageSize.height() / dpr)));
         if (fit) {
-            const QSize available = (maximumViewportSize() - QSize(28, 28)).expandedTo(QSize(1, 1));
+            const QSize available = (maximumViewportSize() - QSize(2 * padding, 2 * padding)).expandedTo(QSize(1, 1));
             target.scale(available.boundedTo(target), Qt::KeepAspectRatio);
         }
-        canvas->resize(target.expandedTo(QSize(1, 1)));
+        target = target.expandedTo(QSize(1, 1));
+        holder->setFixedSize(target + QSize(2 * padding, 2 * padding));
+        canvas->setGeometry(padding, padding, target.width(), target.height());
+        viewport()->update();
     }
 };
 
-constexpr auto libraryStyles = R"(
-    QWidget#libraryRoot { background: #111421; }
-    QWidget#libraryBar, QWidget#viewerBar { background: #191d2d; }
-    QLabel { color: #edf0ff; }
-    QLabel#libraryTitle { font-size: 22px; font-weight: 700; }
-    QLabel#stateTitle { font-size: 18px; font-weight: 700; }
-    QLabel#details, QLabel#status { color: #b2bbd8; }
-    QLabel#alert { color: #f2cb86; background: #31291e; border: 1px solid #584429; border-radius: 5px; padding: 7px 10px; }
-    QListView { background: #111421; color: #edf0ff; border: none; outline: none; }
-    QScrollArea { background: #111421; }
-    QPushButton { background: #22283c; border: 1px solid #343d56; border-radius: 6px; padding: 7px 12px; color: #eef0ff; }
-    QPushButton:hover { background: #2b334d; border-color: #58658a; }
-    QPushButton:focus { border-color: #c4a8ff; }
-    QPushButton:disabled { color: #828ba8; background: #1c2032; }
-    QPushButton#primary { background: #7053c7; border-color: #8e6ce4; color: white; font-weight: 700; }
-    QPushButton#primary:hover { background: #8261dd; }
-    QPushButton#primary:disabled { background: #312843; border-color: #4e4365; color: #a69bbd; }
-    QPushButton#primary:focus { border-color: #f1e6ff; }
-    QScrollBar:vertical { background: #181d2c; width: 12px; margin: 0; }
-    QScrollBar:horizontal { background: #181d2c; height: 12px; margin: 0; }
-    QScrollBar::handle { background: #475270; border-radius: 4px; min-width: 25px; min-height: 25px; }
-    QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
-    QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+class Bar final : public QWidget {
+public:
+    explicit Bar(QWidget *parent) : QWidget(parent) { setFixedHeight(56); }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const theme::Palette &c = theme::colors();
+        QPainter painter(this);
+        painter.fillRect(rect(), c.surface);
+        painter.fillRect(QRectF(0, height() - 1, width(), 1), c.border);
+    }
+};
+
+class Overlay final : public QWidget {
+public:
+    using QWidget::QWidget;
+    std::function<void()> onResize;
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QWidget::resizeEvent(event);
+        if (onResize) {
+            onResize();
+        }
+    }
+};
+
+constexpr auto libraryRules = R"(
+    QListView { background: @stage; border: none; outline: none; }
+    QLabel#barTitle { font-size: 16px; font-weight: 600; }
+    QLabel#viewerTitle { font-size: 14px; font-weight: 600; }
 )";
 
-}
+enum class StateAction { None, Setup, Retry };
+
+} // namespace
 
 struct LibraryWindow::Ui {
     Ui(LibraryWindow &owner, LibraryClient &transport) : window(owner), client(transport)
     {
-        window.setWindowTitle(QStringLiteral("Screenshot Library — ScreenFrame"));
-        window.setMinimumSize(540, 400);
-        window.resize(850, 660);
+        window.setWindowTitle(QStringLiteral("Library — ScreenFrame"));
+        window.setMinimumSize(560, 420);
+        window.resize(980, 700);
 
         auto *root = new QWidget(&window);
-        root->setObjectName(QStringLiteral("libraryRoot"));
-        root->setStyleSheet(QString::fromLatin1(libraryStyles));
+        root->setObjectName(QStringLiteral("surface"));
+        root->setAttribute(Qt::WA_StyledBackground);
+        theme::attach(root, libraryRules);
         window.setCentralWidget(root);
         auto *layout = new QVBoxLayout(root);
         layout->setContentsMargins(0, 0, 0, 0);
@@ -324,9 +475,11 @@ struct LibraryWindow::Ui {
         thumbnailTimer->setSingleShot(true);
         thumbnailTimer->setInterval(25);
         QObject::connect(thumbnailTimer, &QTimer::timeout, &context, [this] { loadThumbnails(); });
-        listView->resized = [this] { scheduleThumbnails(); };
-        QObject::connect(listView->verticalScrollBar(), &QScrollBar::valueChanged, &context,
-                         [this] { scheduleThumbnails(); });
+        grid->resized = [this] { scheduleThumbnails(); };
+        QObject::connect(grid->verticalScrollBar(), &QScrollBar::valueChanged, &context, [this] {
+            scheduleThumbnails();
+            loadMoreIfNeeded();
+        });
 
         refreshTimer = new QTimer(&window);
         refreshTimer->setSingleShot(true);
@@ -346,25 +499,28 @@ struct LibraryWindow::Ui {
                          [this](int pending, const QString &error) { updateSync(pending, error); });
         updateSync(client.pendingCount(), {});
 
-        auto *escape = new QShortcut(QKeySequence(Qt::Key_Escape), &window);
-        QObject::connect(escape, &QShortcut::activated, &context, [this] {
+        addShortcut(QKeySequence(Qt::Key_Escape), [this] {
             if (pages->currentWidget() == viewerPage) {
                 showList();
             } else {
                 window.close();
             }
         });
-        auto *refreshKey = new QShortcut(QKeySequence::Refresh, &window);
-        QObject::connect(refreshKey, &QShortcut::activated, &context, [this] {
+        addShortcut(QKeySequence::Refresh, [this] {
             if (pages->currentWidget() == listPage && client.isConfigured()) {
                 refresh();
             }
         });
-        auto *saveKey = new QShortcut(QKeySequence::Save, &window);
-        QObject::connect(saveKey, &QShortcut::activated, &context, [this] { saveImage(); });
+        addShortcut(QKeySequence::Save, [this] { saveImage(); });
+        addShortcut(QKeySequence::Copy, [this] { copyImage(); });
+        // Arrow keys belong to the grid while it is showing, so these only apply inside the viewer.
+        addShortcut(QKeySequence(Qt::Key_Left), [this] { step(-1); }, viewerPage);
+        addShortcut(QKeySequence(Qt::Key_Right), [this] { step(1); }, viewerPage);
+        addShortcut(QKeySequence(Qt::Key_0), [this] { setViewerFit(true); }, viewerPage);
+        addShortcut(QKeySequence(Qt::Key_1), [this] { setViewerFit(false); }, viewerPage);
     }
 
-    ~Ui() { listView->resized = {}; }
+    ~Ui() { grid->resized = {}; }
 
     LibraryWindow &window;
     LibraryClient &client;
@@ -372,37 +528,47 @@ struct LibraryWindow::Ui {
     QWidget *listPage = nullptr;
     QWidget *viewerPage = nullptr;
     QStackedWidget *listContent = nullptr;
-    LibraryList *listView = nullptr;
+    EmptyState *listState = nullptr;
+    StateAction stateAction = StateAction::None;
+    LibraryGrid *grid = nullptr;
     LibraryModel *model = nullptr;
-    QLabel *stateTitle = nullptr;
-    QLabel *stateDetails = nullptr;
-    QLabel *listAlert = nullptr;
-    QLabel *syncLabel = nullptr;
-    QPushButton *refreshButton = nullptr;
-    QPushButton *setupButton = nullptr;
-    QPushButton *openButton = nullptr;
-    QPushButton *loadMoreButton = nullptr;
+    QLabel *listCaption = nullptr;
+    Banner *listBanner = nullptr;
+    Banner *syncBanner = nullptr;
+    Button *refreshButton = nullptr;
     QTimer *thumbnailTimer = nullptr;
     QTimer *refreshTimer = nullptr;
-    QSet<QString> failedThumbnails;
     QSet<QString> pendingThumbnails;
     quint64 listGeneration = 0;
     bool needsRefresh = true;
     bool listing = false;
     QString nextCursor;
+    int pendingUploads = 0;
 
     QStackedWidget *viewerContent = nullptr;
+    EmptyState *viewerState = nullptr;
     ImageView *imageView = nullptr;
+    Notice *viewerToast = nullptr;
     QLabel *viewerTitle = nullptr;
     QLabel *viewerDetails = nullptr;
-    QLabel *viewerState = nullptr;
-    QPushButton *retryImage = nullptr;
-    QPushButton *saveButton = nullptr;
-    QPushButton *fitButton = nullptr;
-    QPushButton *actualButton = nullptr;
+    Button *previousButton = nullptr;
+    Button *nextButton = nullptr;
+    Segmented *zoomMode = nullptr;
+    Button *copyButton = nullptr;
+    Button *saveButton = nullptr;
     LibraryItem openedItem;
+    int openedRow = -1;
     quint64 viewerGeneration = 0;
     QObject context;
+
+    void addShortcut(const QKeySequence &sequence, const std::function<void()> &handler, QWidget *scope = nullptr)
+    {
+        auto *shortcut = new QShortcut(sequence, scope ? scope : static_cast<QWidget *>(&window));
+        if (scope) {
+            shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+        }
+        QObject::connect(shortcut, &QShortcut::activated, &context, handler);
+    }
 
     QWidget *makeListPage()
     {
@@ -410,137 +576,134 @@ struct LibraryWindow::Ui {
         auto *column = new QVBoxLayout(page);
         column->setContentsMargins(0, 0, 0, 0);
         column->setSpacing(0);
-        auto *bar = new QWidget(page);
-        bar->setObjectName(QStringLiteral("libraryBar"));
+        auto *bar = new Bar(page);
         auto *header = new QHBoxLayout(bar);
-        header->setContentsMargins(18, 13, 18, 13);
-        header->addWidget(label(QStringLiteral("Screenshot Library"), "libraryTitle", bar));
-        header->addStretch();
-        auto *settingsButton = new QPushButton(QStringLiteral("Settings"), bar);
-        QObject::connect(settingsButton, &QPushButton::clicked, &window, &LibraryWindow::settingsRequested);
-        header->addWidget(settingsButton);
-        refreshButton = new QPushButton(QStringLiteral("Refresh"), bar);
-        refreshButton->setToolTip(QStringLiteral("Refresh screenshots"));
+        header->setContentsMargins(20, 0, 12, 0);
+        header->setSpacing(4);
+        header->addWidget(theme::label(QStringLiteral("Library"), "barTitle", bar));
+        header->addSpacing(12);
+        listCaption = theme::label({}, "caption", bar);
+        header->addWidget(listCaption, 1);
+        refreshButton = new Button(Button::Ghost, Icon::Refresh, {}, bar);
+        refreshButton->setToolTip(QStringLiteral("Refresh  ·  ") + QKeySequence(QKeySequence::Refresh).toString(QKeySequence::NativeText));
+        refreshButton->setAccessibleName(QStringLiteral("Refresh"));
         QObject::connect(refreshButton, &QPushButton::clicked, &context, [this] { refresh(); });
         header->addWidget(refreshButton);
-        openButton = new QPushButton(QStringLiteral("Open"), bar);
-        openButton->setObjectName(QStringLiteral("primary"));
-        openButton->setEnabled(false);
-        QObject::connect(openButton, &QPushButton::clicked, &context,
-                         [this] { openItem(listView->currentIndex()); });
-        header->addWidget(openButton);
+        auto *settingsButton = new Button(Button::Ghost, Icon::Settings, {}, bar);
+        settingsButton->setToolTip(QStringLiteral("Library settings"));
+        settingsButton->setAccessibleName(QStringLiteral("Settings"));
+        QObject::connect(settingsButton, &QPushButton::clicked, &window, &LibraryWindow::settingsRequested);
+        header->addWidget(settingsButton);
         column->addWidget(bar);
 
-        auto *body = new QWidget(page);
-        auto *bodyLayout = new QVBoxLayout(body);
-        bodyLayout->setContentsMargins(18, 12, 18, 12);
-        bodyLayout->setSpacing(8);
-        listAlert = label({}, "alert", body);
-        listAlert->setWordWrap(true);
-        listAlert->hide();
-        bodyLayout->addWidget(listAlert);
+        syncBanner = new Banner(page);
+        listBanner = new Banner(page);
+        column->addWidget(syncBanner);
+        column->addWidget(listBanner);
 
-        listContent = new QStackedWidget(body);
-        auto *statePage = new QWidget(listContent);
-        auto *stateLayout = new QVBoxLayout(statePage);
-        stateLayout->setContentsMargins(10, 10, 10, 10);
-        stateLayout->addStretch();
-        stateTitle = label(QStringLiteral("Loading screenshots…"), "stateTitle", statePage);
-        stateTitle->setAlignment(Qt::AlignCenter);
-        stateLayout->addWidget(stateTitle);
-        stateDetails = label({}, "details", statePage);
-        stateDetails->setAlignment(Qt::AlignCenter);
-        stateDetails->setWordWrap(true);
-        stateLayout->addWidget(stateDetails);
-        setupButton = new QPushButton(QStringLiteral("Set up library"), statePage);
-        setupButton->setObjectName(QStringLiteral("primary"));
-        setupButton->hide();
-        QObject::connect(setupButton, &QPushButton::clicked, &window, &LibraryWindow::settingsRequested);
-        stateLayout->addWidget(setupButton, 0, Qt::AlignHCenter);
-        stateLayout->addStretch();
-        listContent->addWidget(statePage);
+        listContent = new QStackedWidget(page);
+        listState = new EmptyState(listContent);
+        listState->setObjectName(QStringLiteral("stage"));
+        listState->setAttribute(Qt::WA_StyledBackground);
+        QObject::connect(listState->action(), &QPushButton::clicked, &context, [this] {
+            if (stateAction == StateAction::Setup) {
+                emit window.settingsRequested();
+            } else if (stateAction == StateAction::Retry) {
+                refresh();
+            }
+        });
+        listContent->addWidget(listState);
 
-        listView = new LibraryList(listContent);
-        listView->setAccessibleName(QStringLiteral("Screenshots"));
-        listView->setFrameShape(QFrame::NoFrame);
-        listView->setUniformItemSizes(true);
-        listView->setMouseTracking(true);
-        listView->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-        listView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        model = new LibraryModel(listView);
-        listView->setModel(model);
-        listView->setItemDelegate(new LibraryDelegate(listView));
-        QObject::connect(listView, &QListView::activated, &context, [this](const QModelIndex &index) { openItem(index); });
-        QObject::connect(listView->selectionModel(), &QItemSelectionModel::currentChanged, &context,
-                         [this] { openButton->setEnabled(listView->currentIndex().isValid()); });
-        listContent->addWidget(listView);
-        bodyLayout->addWidget(listContent, 1);
-
-        auto *footer = new QHBoxLayout;
-        syncLabel = label({}, "status", body);
-        syncLabel->setWordWrap(true);
-        footer->addWidget(syncLabel, 1);
-        loadMoreButton = new QPushButton(QStringLiteral("Load more"), body);
-        loadMoreButton->hide();
-        QObject::connect(loadMoreButton, &QPushButton::clicked, &context, [this] { requestList(nextCursor); });
-        footer->addWidget(loadMoreButton);
-        bodyLayout->addLayout(footer);
-        column->addWidget(body, 1);
+        grid = new LibraryGrid(listContent);
+        grid->setAccessibleName(QStringLiteral("Screenshots"));
+        model = new LibraryModel(grid);
+        grid->setModel(model);
+        grid->setItemDelegate(new LibraryDelegate(grid));
+        QObject::connect(grid, &QListView::activated, &context, [this](const QModelIndex &index) { openItem(index); });
+        listContent->addWidget(grid);
+        column->addWidget(listContent, 1);
         return page;
     }
 
     QWidget *makeViewerPage()
     {
         auto *page = new QWidget(pages);
+        page->setFocusPolicy(Qt::StrongFocus);
         auto *column = new QVBoxLayout(page);
         column->setContentsMargins(0, 0, 0, 0);
         column->setSpacing(0);
-        auto *bar = new QWidget(page);
-        bar->setObjectName(QStringLiteral("viewerBar"));
+        auto *bar = new Bar(page);
         auto *row = new QHBoxLayout(bar);
-        row->setContentsMargins(16, 10, 16, 10);
-        auto *back = new QPushButton(QStringLiteral("Back to library"), bar);
+        row->setContentsMargins(10, 0, 12, 0);
+        row->setSpacing(4);
+        auto *back = new Button(Button::Ghost, Icon::Back, QStringLiteral("Library"), bar);
+        back->setToolTip(QStringLiteral("Back to all screenshots  ·  Esc"));
         QObject::connect(back, &QPushButton::clicked, &context, [this] { showList(); });
         row->addWidget(back);
+        row->addWidget(separator(bar));
         row->addSpacing(6);
         auto *heading = new QVBoxLayout;
-        heading->setSpacing(2);
-        viewerTitle = label({}, "stateTitle", bar);
-        viewerDetails = label({}, "details", bar);
-        viewerDetails->setWordWrap(true);
+        heading->setSpacing(1);
+        heading->setContentsMargins(0, 0, 0, 0);
+        viewerTitle = new ElidedLabel("viewerTitle", bar);
+        viewerDetails = new ElidedLabel("caption", bar);
+        heading->addStretch();
         heading->addWidget(viewerTitle);
         heading->addWidget(viewerDetails);
+        heading->addStretch();
         row->addLayout(heading, 1);
-        fitButton = new QPushButton(QStringLiteral("Fit"), bar);
-        QObject::connect(fitButton, &QPushButton::clicked, &context, [this] { imageView->setFit(true); });
-        row->addWidget(fitButton);
-        actualButton = new QPushButton(QStringLiteral("1:1"), bar);
-        actualButton->setToolTip(QStringLiteral("Actual size"));
-        QObject::connect(actualButton, &QPushButton::clicked, &context, [this] { imageView->setFit(false); });
-        row->addWidget(actualButton);
-        saveButton = new QPushButton(QStringLiteral("Save PNG"), bar);
-        saveButton->setObjectName(QStringLiteral("primary"));
+
+        previousButton = new Button(Button::Ghost, Icon::Back, {}, bar);
+        nextButton = new Button(Button::Ghost, Icon::Forward, {}, bar);
+        previousButton->setToolTip(QStringLiteral("Previous screenshot  ·  ←"));
+        nextButton->setToolTip(QStringLiteral("Next screenshot  ·  →"));
+        previousButton->setAccessibleName(QStringLiteral("Previous screenshot"));
+        nextButton->setAccessibleName(QStringLiteral("Next screenshot"));
+        QObject::connect(previousButton, &QPushButton::clicked, &context, [this] { step(-1); });
+        QObject::connect(nextButton, &QPushButton::clicked, &context, [this] { step(1); });
+        row->addWidget(previousButton);
+        row->addWidget(nextButton);
+        row->addSpacing(8);
+        zoomMode = new Segmented({QStringLiteral("Fit"), QStringLiteral("100%")}, bar);
+        zoomMode->setFixedWidth(124);
+        zoomMode->setAccessibleName(QStringLiteral("Zoom"));
+        zoomMode->setToolTip(QStringLiteral("Fit  ·  0     Actual size  ·  1"));
+        QObject::connect(zoomMode, &Segmented::currentChanged, &context, [this](int index) { imageView->setFit(index == 0); });
+        row->addWidget(zoomMode);
+        row->addSpacing(8);
+        copyButton = new Button(Button::Tonal, Icon::Copy, QStringLiteral("Copy"), bar);
+        saveButton = new Button(Button::Primary, Icon::Save, QStringLiteral("Save"), bar);
+        copyButton->setToolTip(QStringLiteral("Copy to clipboard"));
+        saveButton->setToolTip(QStringLiteral("Save as PNG"));
+        QObject::connect(copyButton, &QPushButton::clicked, &context, [this] { copyImage(); });
         QObject::connect(saveButton, &QPushButton::clicked, &context, [this] { saveImage(); });
+        row->addWidget(copyButton);
+        row->addSpacing(4);
         row->addWidget(saveButton);
         column->addWidget(bar);
 
-        viewerContent = new QStackedWidget(page);
-        auto *statePage = new QWidget(viewerContent);
-        auto *stateLayout = new QVBoxLayout(statePage);
-        stateLayout->setContentsMargins(18, 18, 18, 18);
-        stateLayout->addStretch();
-        viewerState = label({}, "details", statePage);
-        viewerState->setWordWrap(true);
-        viewerState->setAlignment(Qt::AlignCenter);
-        stateLayout->addWidget(viewerState);
-        retryImage = new QPushButton(QStringLiteral("Try again"), statePage);
-        QObject::connect(retryImage, &QPushButton::clicked, &context, [this] { requestImage(); });
-        stateLayout->addWidget(retryImage, 0, Qt::AlignHCenter);
-        stateLayout->addStretch();
-        viewerContent->addWidget(statePage);
+        auto *area = new Overlay(page);
+        viewerContent = new QStackedWidget(area);
+        viewerState = new EmptyState(viewerContent);
+        viewerState->setObjectName(QStringLiteral("stage"));
+        viewerState->setAttribute(Qt::WA_StyledBackground);
+        QObject::connect(viewerState->action(), &QPushButton::clicked, &context, [this] { requestImage(); });
+        viewerContent->addWidget(viewerState);
         imageView = new ImageView(viewerContent);
         viewerContent->addWidget(imageView);
-        column->addWidget(viewerContent, 1);
+        viewerToast = new Notice(Notice::Success, area);
+        const auto place = [this, area] {
+            viewerContent->setGeometry(area->rect());
+            if (viewerToast->isVisible()) {
+                const QSize size = viewerToast->sizeFor(std::min(area->width() - 32, 480));
+                viewerToast->setGeometry((area->width() - size.width()) / 2, 14 - Notice::shadowMargin, size.width(),
+                                         size.height());
+                viewerToast->raise();
+            }
+        };
+        area->onResize = place;
+        QObject::connect(viewerToast, &Notice::messageChanged, &context, place);
+        column->addWidget(area, 1);
         return page;
     }
 
@@ -552,22 +715,27 @@ struct LibraryWindow::Ui {
         scheduleThumbnails();
     }
 
-    void setListState(const QString &title, const QString &details = {})
+    void setListState(Icon icon, const QString &title, const QString &details, StateAction action = StateAction::None)
     {
-        stateTitle->setText(title);
-        stateDetails->setText(details);
-        setupButton->setVisible(!client.isConfigured());
-        listContent->setCurrentIndex(0);
+        stateAction = action;
+        const QString label = action == StateAction::Setup ? QStringLiteral("Set up library")
+            : action == StateAction::Retry                 ? QStringLiteral("Try again")
+                                                           : QString();
+        listState->set(icon, title, details, label);
+        listContent->setCurrentWidget(listState);
     }
 
     void refresh()
     {
-        failedThumbnails.clear();
+        model->clearFailures();
         if (!client.isConfigured()) {
             needsRefresh = true;
             refreshButton->setEnabled(false);
-            setListState(QStringLiteral("Library is not set up"),
-                         QStringLiteral("Connect to a library you host to browse screenshots from your devices."));
+            listCaption->clear();
+            setListState(Icon::Library, QStringLiteral("Collect screenshots from all your devices"),
+                         QStringLiteral("Connect ScreenFrame to a library you host. Screenshots from every connected "
+                                        "device appear here, ready to save again."),
+                         StateAction::Setup);
             return;
         }
         requestList({});
@@ -584,82 +752,111 @@ struct LibraryWindow::Ui {
         }
         listing = true;
         refreshButton->setEnabled(false);
-        loadMoreButton->setEnabled(false);
-        listAlert->hide();
+        listBanner->setMessage({});
         if (first && model->rowCount() == 0) {
-            setListState(QStringLiteral("Loading screenshots…"));
+            setListState(Icon::Refresh, QStringLiteral("Loading screenshots…"), {});
+            listCaption->clear();
         }
         client.list(cursor, &context, [this, first](QList<LibraryItem> entries, QString next, QString error) {
             listing = false;
             refreshButton->setEnabled(true);
-            loadMoreButton->setEnabled(true);
             if (!error.isEmpty()) {
                 if (model->rowCount() == 0) {
-                    setListState(QStringLiteral("Could not load screenshots"), error);
+                    setListState(Icon::Warning, QStringLiteral("Couldn’t reach the library"), error, StateAction::Retry);
                 } else {
-                    listAlert->setText(error);
-                    listAlert->show();
+                    listBanner->setMessage(error);
                 }
                 return;
             }
             nextCursor = std::move(next);
-            loadMoreButton->setVisible(!nextCursor.isEmpty());
             if (first) {
-                const QModelIndex current = listView->currentIndex();
+                const QModelIndex current = grid->currentIndex();
                 const QString selectedId = current.isValid() ? model->at(current.row()).id : QString();
                 ++listGeneration;
                 model->replace(std::move(entries));
-                listView->scrollToTop();
+                grid->scrollToTop();
                 if (!selectedId.isEmpty()) {
                     for (int row = 0; row < model->rowCount(); ++row) {
                         if (model->at(row).id == selectedId) {
-                            listView->setCurrentIndex(model->index(row));
+                            grid->setCurrentIndex(model->index(row));
                             break;
                         }
                     }
                 }
             } else {
                 model->append(std::move(entries));
+                if (openedRow >= 0 && pages->currentWidget() == viewerPage) {
+                    nextButton->setEnabled(openedRow + 1 < model->rowCount());
+                }
             }
             if (model->rowCount() == 0) {
-                setListState(QStringLiteral("No screenshots yet"),
-                             QStringLiteral("Take a screenshot on a device connected to this library."));
+                setListState(Icon::Region, QStringLiteral("No screenshots yet"),
+                             QStringLiteral("Screenshots archived from any device connected to this library appear here."));
             } else {
-                listContent->setCurrentWidget(listView);
-                if (!listView->currentIndex().isValid())
-                    listView->setCurrentIndex(model->index(0));
+                listContent->setCurrentWidget(grid);
+                if (!grid->currentIndex().isValid()) {
+                    grid->setCurrentIndex(model->index(0));
+                }
             }
-            openButton->setEnabled(listView->currentIndex().isValid());
+            updateCaption();
             if (needsRefresh) {
                 refreshTimer->start();
             }
             scheduleThumbnails();
+            QTimer::singleShot(0, &context, [this] { loadMoreIfNeeded(); });
         });
+    }
+
+    void loadMoreIfNeeded()
+    {
+        if (listing || nextCursor.isEmpty() || listContent->currentWidget() != grid || !window.isVisible()) {
+            return;
+        }
+        const QScrollBar *bar = grid->verticalScrollBar();
+        if (bar->value() >= bar->maximum() - grid->gridSize().height()) {
+            requestList(nextCursor);
+        }
+    }
+
+    void updateCaption()
+    {
+        QStringList parts;
+        const int count = model->rowCount();
+        if (count > 0) {
+            parts << (nextCursor.isEmpty() ? QStringLiteral("%n screenshot(s)") : QStringLiteral("%n+ screenshots"))
+                         .replace(QStringLiteral("%n"), QString::number(count))
+                         .replace(QStringLiteral("(s)"), count == 1 ? QString() : QStringLiteral("s"));
+        }
+        if (pendingUploads > 0) {
+            parts << QStringLiteral("%1 waiting to upload").arg(pendingUploads);
+        }
+        listCaption->setText(parts.join(QStringLiteral("  ·  ")));
     }
 
     void scheduleThumbnails()
     {
-        if (thumbnailTimer && window.isVisible() && pages->currentWidget() == listPage && listView->isVisible()) {
+        if (thumbnailTimer && window.isVisible() && pages->currentWidget() == listPage && grid->isVisible()) {
             thumbnailTimer->start();
         }
     }
 
     void loadThumbnails()
     {
-        if (!window.isVisible() || pages->currentWidget() != listPage || !listView->isVisible()) {
+        if (!window.isVisible() || pages->currentWidget() != listPage || !grid->isVisible()) {
             return;
         }
         constexpr int maxRequests = 4;
-        const QModelIndex firstVisible = listView->indexAt(QPoint(4, 1));
+        const QModelIndex firstVisible = grid->indexAt(QPoint(4, 4));
         if (!firstVisible.isValid()) {
             return;
         }
-        const int first = std::max(0, firstVisible.row() - 1);
-        const int last = std::min(model->rowCount(), first + listView->viewport()->height() / rowHeight + 4);
+        const int columns = grid->columns();
+        const int rows = grid->viewport()->height() / std::max(1, grid->gridSize().height()) + 2;
+        const int first = std::max(0, firstVisible.row() - columns);
+        const int last = std::min(model->rowCount(), firstVisible.row() + columns * (rows + 1));
         for (int row = first; row < last && pendingThumbnails.size() < maxRequests; ++row) {
             const LibraryItem &item = model->at(row);
-            if (!item.hasThumbnail || model->thumbnail(item.id) || failedThumbnails.contains(item.id)
-                || pendingThumbnails.contains(item.id)) {
+            if (!item.hasThumbnail || model->thumbnail(item.id) || model->failed(item.id) || pendingThumbnails.contains(item.id)) {
                 continue;
             }
             const QString id = item.id;
@@ -671,7 +868,7 @@ struct LibraryWindow::Ui {
                     if (error.isEmpty() && !image.isNull()) {
                         model->setThumbnail(row, std::move(image));
                     } else {
-                        failedThumbnails.insert(id);
+                        model->setFailed(row);
                     }
                 }
                 scheduleThumbnails();
@@ -681,13 +878,9 @@ struct LibraryWindow::Ui {
 
     void updateSync(int pending, const QString &error)
     {
-        if (!error.isEmpty()) {
-            syncLabel->setText(QStringLiteral("Sync paused: %1").arg(error));
-        } else if (pending > 0) {
-            syncLabel->setText(QStringLiteral("Waiting to sync: %1").arg(pending));
-        } else {
-            syncLabel->clear();
-        }
+        pendingUploads = pending;
+        syncBanner->setMessage(error.isEmpty() ? QString() : QStringLiteral("Uploads paused: %1").arg(error));
+        updateCaption();
     }
 
     void openItem(const QModelIndex &index)
@@ -695,11 +888,40 @@ struct LibraryWindow::Ui {
         if (!index.isValid() || index.row() >= model->rowCount()) {
             return;
         }
-        openedItem = model->at(index.row());
+        openedRow = index.row();
+        openedItem = model->at(openedRow);
         viewerTitle->setText(itemTitle(openedItem));
         viewerDetails->setText(itemDetails(openedItem));
+        previousButton->setEnabled(openedRow > 0);
+        nextButton->setEnabled(openedRow + 1 < model->rowCount());
         pages->setCurrentWidget(viewerPage);
+        viewerPage->setFocus();
         requestImage();
+    }
+
+    void step(int direction)
+    {
+        if (pages->currentWidget() != viewerPage || openedRow < 0) {
+            return;
+        }
+        const int row = openedRow + direction;
+        if (row < 0 || row >= model->rowCount()) {
+            return;
+        }
+        grid->setCurrentIndex(model->index(row));
+        openItem(model->index(row));
+        if (row + 2 >= model->rowCount()) {
+            if (!listing && !nextCursor.isEmpty()) {
+                requestList(nextCursor);
+            }
+        }
+    }
+
+    void setViewerFit(bool fit)
+    {
+        if (pages->currentWidget() == viewerPage && viewerContent->currentWidget() == imageView) {
+            zoomMode->setCurrent(fit ? 0 : 1);
+        }
     }
 
     void showList()
@@ -707,57 +929,57 @@ struct LibraryWindow::Ui {
         ++viewerGeneration;
         imageView->setImage({});
         pages->setCurrentWidget(listPage);
-        listView->setFocus();
+        if (grid->currentIndex().isValid()) {
+            grid->scrollTo(grid->currentIndex());
+        }
+        grid->setFocus();
         show();
     }
 
     void requestImage()
     {
         const quint64 generation = ++viewerGeneration;
-        viewerContent->setCurrentIndex(0);
-        viewerState->setText(QStringLiteral("Loading full-size screenshot…"));
-        retryImage->hide();
+        viewerContent->setCurrentWidget(viewerState);
+        viewerState->set(Icon::Refresh, QStringLiteral("Loading full-size screenshot…"), {});
         saveButton->setEnabled(false);
-        fitButton->setEnabled(false);
-        actualButton->setEnabled(false);
+        copyButton->setEnabled(false);
+        zoomMode->setEnabled(false);
         client.image(openedItem.id, false, &context, [this, generation](QImage image, QString error) {
             if (generation != viewerGeneration) {
                 return;
             }
             if (!error.isEmpty() || image.isNull()) {
-                viewerState->setText(error.isEmpty() ? QStringLiteral("Could not open screenshot.") : error);
-                retryImage->show();
+                viewerState->set(Icon::Warning, QStringLiteral("Couldn’t open this screenshot"),
+                                 error.isEmpty() ? QStringLiteral("The library returned an image ScreenFrame can’t read.") : error,
+                                 QStringLiteral("Try again"));
                 return;
             }
             viewerContent->setCurrentWidget(imageView);
+            zoomMode->setCurrent(0);
             imageView->setImage(std::move(image));
             saveButton->setEnabled(true);
-            fitButton->setEnabled(true);
-            actualButton->setEnabled(true);
+            copyButton->setEnabled(true);
+            zoomMode->setEnabled(true);
         });
+    }
+
+    bool imageReady() const
+    {
+        return pages->currentWidget() == viewerPage && saveButton->isEnabled();
+    }
+
+    void copyImage()
+    {
+        if (imageReady()) {
+            QApplication::clipboard()->setImage(imageView->image());
+            viewerToast->flash(QStringLiteral("Copied to clipboard"));
+        }
     }
 
     void saveImage()
     {
-        if (pages->currentWidget() != viewerPage || !saveButton->isEnabled()) {
-            return;
-        }
-        const QImage image = imageView->image();
-        QString directory = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
-        if (directory.isEmpty() || !QDir(directory).exists()) {
-            directory = QDir::homePath();
-        }
-        QFileDialog dialog(&window, QStringLiteral("Save screenshot"), directory, QStringLiteral("PNG (*.png)"));
-        dialog.setAcceptMode(QFileDialog::AcceptSave);
-        dialog.setDefaultSuffix(QStringLiteral("png"));
-        const QString timestamp = openedItem.capturedAt.toLocalTime().toString(QStringLiteral("yyyy-MM-dd_HH-mm-ss"));
-        dialog.selectFile(QStringLiteral("Screenshot_%1.png").arg(timestamp));
-        if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
-            return;
-        }
-        QString error;
-        if (!savePng(image, dialog.selectedFiles().constFirst(), &error)) {
-            QMessageBox::warning(&window, QStringLiteral("Could not save screenshot"), error);
+        if (imageReady() && saveImageAs(&window, imageView->image(), openedItem.capturedAt)) {
+            viewerToast->flash(QStringLiteral("Screenshot saved"));
         }
     }
 };

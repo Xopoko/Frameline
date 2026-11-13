@@ -16,6 +16,7 @@ unit_name=screenframe-library.service
 unit_file="$unit_dir/$unit_name"
 token_file="$data_dir/token"
 current="$install_dir/current"
+port=18745
 
 systemctl --user show-environment >/dev/null
 for path in "$data_dir" "$install_dir" "$install_dir/releases"; do
@@ -31,12 +32,12 @@ flock -x 9
 work=$(mktemp -d "$install_dir/.deploy.XXXXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 
-cat >"$work/$unit_name" <<'UNIT'
+cat >"$work/$unit_name" <<UNIT
 [Unit]
 Description=ScreenFrame private screenshot library
 
 [Service]
-ExecStart=/usr/bin/python3 "%h/.local/share/screenframe-library/current/screenframe_server.py" --data-dir "%h/.local/state/screenframe-library" --token-file "%h/.local/state/screenframe-library/token" --port 18745
+ExecStart=/usr/bin/python3 "%h/.local/share/screenframe-library/current/screenframe_server.py" --data-dir "%h/.local/state/screenframe-library" --token-file "%h/.local/state/screenframe-library/token" --port $port
 Restart=on-failure
 RestartSec=2
 UMask=0077
@@ -70,8 +71,8 @@ if [[ "$first_install" != true && -z "$old_release" ]]; then
     echo "The existing ScreenFrame library service has no current release." >&2
     exit 1
 fi
-if [[ "$first_install" == true ]] && ss -H -ltn 'sport = :18745' | grep -q .; then
-    echo "Port 18745 is already in use." >&2
+if [[ "$first_install" == true ]] && ss -H -ltn "sport = :$port" | grep -q .; then
+    echo "Port $port is already in use." >&2
     exit 1
 fi
 
@@ -117,8 +118,9 @@ set_release() {
 }
 
 wait_for_health() {
-    /usr/bin/python3 - <<'PY'
+    /usr/bin/python3 - "$port" <<'PY'
 import json
+import sys
 import time
 from urllib.error import URLError
 from urllib.request import ProxyHandler, build_opener
@@ -126,7 +128,7 @@ from urllib.request import ProxyHandler, build_opener
 opener = build_opener(ProxyHandler({}))
 for _ in range(20):
     try:
-        with opener.open("http://127.0.0.1:18745/healthz", timeout=0.5) as response:
+        with opener.open(f"http://127.0.0.1:{sys.argv[1]}/healthz", timeout=0.5) as response:
             if response.status == 200 and json.load(response) == {"status": "ok"}:
                 raise SystemExit(0)
     except (OSError, URLError, ValueError):
@@ -165,7 +167,7 @@ fi
 
 if systemctl --user is-active --quiet "$unit_name"; then
     wait_for_health
-    echo "ScreenFrame library is running on 127.0.0.1:18745."
+    echo "ScreenFrame library is running on 127.0.0.1:$port."
 else
     echo "ScreenFrame library files were updated. The service remains stopped."
 fi

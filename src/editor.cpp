@@ -1,36 +1,33 @@
 #include "editor.h"
 
 #include "annotations.h"
+#include "controls.h"
 #include "pngexport.h"
+#include "theme.h"
 
+#include <QAbstractButton>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QClipboard>
 #include <QCloseEvent>
-#include <QComboBox>
 #include <QDateTime>
-#include <QDir>
-#include <QFileDialog>
-#include <QFrame>
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QKeySequence>
 #include <QLabel>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QNativeGestureEvent>
 #include <QPaintEvent>
 #include <QPainter>
-#include <QPolygonF>
-#include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QShowEvent>
 #include <QShortcut>
 #include <QStackedWidget>
-#include <QStandardPaths>
-#include <QToolButton>
 #include <QVBoxLayout>
+#include <QVariantAnimation>
 #include <QWindow>
 
 #include <algorithm>
@@ -44,129 +41,75 @@
 
 namespace {
 
-using screenframe::Annotation;
-using screenframe::Tool;
+// Space around the screenshot. The bottom leaves room for the floating tool island.
+const QMargins stageMargins(40, 32, 40, 92);
 
-enum class Icon { Full, Region, Library, Arrow, Pen, Rectangle, Blur, Redact, Undo, Redo, Copy, Save, Minus, Plus };
+struct ToolChoice {
+    Tool tool;
+    Icon icon;
+    const char *label;
+    const char *key;
+};
 
-QIcon makeIcon(Icon icon, const QColor &color = QColor("#dce1fb"))
+constexpr std::array toolChoices{
+    ToolChoice{Tool::Arrow, Icon::Arrow, "Arrow", "A"},
+    ToolChoice{Tool::Pen, Icon::Pen, "Pen", "P"},
+    ToolChoice{Tool::Rectangle, Icon::Rectangle, "Rectangle", "R"},
+    ToolChoice{Tool::Blur, Icon::Blur, "Blur", "B"},
+    ToolChoice{Tool::Redact, Icon::Redact, "Redact", "X"},
+};
+
+constexpr std::array markColors{
+    std::pair{"Red", 0xff5373}, std::pair{"Orange", 0xff9e4b}, std::pair{"Yellow", 0xffdb6a},
+    std::pair{"Green", 0x60d9a2}, std::pair{"Blue", 0x6db6ff}, std::pair{"Purple", 0xb58aff},
+    std::pair{"White", 0xffffff}, std::pair{"Black", 0x111420},
+};
+
+constexpr std::array strokeWidths{2, 4, 6, 10, 16};
+constexpr int defaultStrokeIndex = 2;
+
+QString nativeKeys(QKeySequence::StandardKey key)
 {
-    QPixmap image(48, 48);
-    image.fill(Qt::transparent);
-    image.setDevicePixelRatio(2);
-    QPainter painter(&image);
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setPen(QPen(color, 1.65, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    auto line = [&](qreal x1, qreal y1, qreal x2, qreal y2) {
-        painter.drawLine(QPointF(x1, y1), QPointF(x2, y2));
-    };
-    switch (icon) {
-    case Icon::Full:
-        painter.drawRoundedRect(QRectF(3.25, 4.5, 17.5, 13), 1.7, 1.7);
-        line(9, 20.5, 15, 20.5);
-        line(12, 17.5, 12, 20.5);
-        break;
-    case Icon::Region:
-        for (const auto &point : {QPointF(4, 4), QPointF(20, 4), QPointF(4, 20), QPointF(20, 20)}) {
-            line(point.x(), point.y(), point.x() == 4 ? 9 : 15, point.y());
-            line(point.x(), point.y(), point.x(), point.y() == 4 ? 9 : 15);
-        }
-        line(9, 12, 15, 12);
-        line(12, 9, 12, 15);
-        break;
-    case Icon::Library:
-        painter.drawRoundedRect(QRectF(4, 8, 16, 12), 1.6, 1.6);
-        line(6, 4.5, 18, 4.5);
-        line(9.5, 12, 14.5, 12);
-        break;
-    case Icon::Arrow:
-        line(5, 19, 19, 5);
-        line(12, 5, 19, 5);
-        line(19, 5, 19, 12);
-        break;
-    case Icon::Pen:
-        painter.drawPolygon(QPolygonF{QPointF(4, 20), QPointF(5.2, 14.2), QPointF(16.5, 3),
-                                      QPointF(21, 7.5), QPointF(9.8, 18.8)});
-        line(14, 5.5, 18.5, 10);
-        break;
-    case Icon::Rectangle:
-        painter.drawRoundedRect(QRectF(4, 5, 16, 14), 1.5, 1.5);
-        break;
-    case Icon::Blur:
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(color);
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                const qreal radius = 1.25 + 0.3 * column;
-                painter.drawEllipse(QPointF(6 + column * 6, 6 + row * 6), radius, radius);
+    return QKeySequence(key).toString(QKeySequence::NativeText);
+}
+
+QString withKeys(const QString &label, const QString &keys)
+{
+    return keys.isEmpty() ? label : label + QStringLiteral("  ·  ") + keys;
+}
+
+void paintChecker(QPainter &painter, const QRect &area)
+{
+    const theme::Palette &c = theme::colors();
+    const QColor light = c.dark ? QColor(0x23, 0x2a, 0x33) : QColor(0xff, 0xff, 0xff);
+    const QColor dark = c.dark ? QColor(0x1a, 0x20, 0x27) : QColor(0xe6, 0xe9, 0xed);
+    painter.fillRect(area, light);
+    constexpr int tile = 8;
+    for (int y = area.top() / tile * tile; y <= area.bottom(); y += tile) {
+        for (int x = area.left() / tile * tile; x <= area.right(); x += tile) {
+            if ((x / tile + y / tile) % 2 == 0) {
+                painter.fillRect(QRect(x, y, tile, tile).intersected(area), dark);
             }
         }
-        break;
-    case Icon::Redact:
-        painter.drawRoundedRect(QRectF(3.5, 5.5, 17, 13), 2, 2);
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(color);
-        painter.drawRoundedRect(QRectF(6.5, 9, 11, 6), 0.7, 0.7);
-        break;
-    case Icon::Redo:
-        painter.translate(24, 0);
-        painter.scale(-1, 1);
-        [[fallthrough]];
-    case Icon::Undo:
-        painter.drawArc(QRectF(6, 8, 14, 13), 0, 166 * 16);
-        line(4.5, 12.5, 6, 8);
-        line(4.5, 12.5, 9, 13.2);
-        break;
-    case Icon::Copy:
-        painter.drawRoundedRect(QRectF(8, 8, 12, 12), 2, 2);
-        painter.drawPolyline(QPolygonF{QPointF(5, 16), QPointF(4, 16), QPointF(4, 4),
-                                       QPointF(16, 4), QPointF(16, 5)});
-        break;
-    case Icon::Save:
-        line(12, 3.5, 12, 14.5);
-        line(8, 10.5, 12, 14.5);
-        line(16, 10.5, 12, 14.5);
-        painter.drawPolyline(QPolygonF{QPointF(4, 15), QPointF(4, 20), QPointF(20, 20), QPointF(20, 15)});
-        break;
-    case Icon::Plus:
-        line(12, 6, 12, 18);
-        [[fallthrough]];
-    case Icon::Minus:
-        line(6, 12, 18, 12);
-        break;
     }
-    painter.end();
-    return QIcon(image);
 }
 
-QPushButton *makeButton(const QString &label, Icon icon, QWidget *parent, const char *style = "")
+// Converts a trackpad pinch into a zoom factor. Returns 0 for other events.
+qreal pinchFactor(QEvent *event)
 {
-    auto *button = new QPushButton(makeIcon(icon), label, parent);
-    button->setObjectName(QString::fromLatin1(style));
-    button->setIconSize(QSize(17, 17));
-    return button;
-}
-
-QToolButton *makeIconButton(Icon icon, const QString &label, QWidget *parent)
-{
-    auto *button = new QToolButton(parent);
-    button->setIcon(makeIcon(icon));
-    button->setIconSize(QSize(17, 17));
-    button->setToolTip(label);
-    button->setAccessibleName(label);
-    return button;
-}
-
-QLabel *makeLabel(const QString &text, const char *style, QWidget *parent)
-{
-    auto *label = new QLabel(text, parent);
-    label->setObjectName(QString::fromLatin1(style));
-    return label;
+    if (event->type() != QEvent::NativeGesture) {
+        return 0;
+    }
+    const auto *gesture = static_cast<QNativeGestureEvent *>(event);
+    if (gesture->gestureType() != Qt::ZoomNativeGesture) {
+        return 0;
+    }
+    return 1 + gesture->value();
 }
 
 class ScreenshotCanvas final : public QWidget {
 public:
-    explicit ScreenshotCanvas(QWidget *parent = nullptr) : QWidget(parent)
+    explicit ScreenshotCanvas(QWidget *parent) : QWidget(parent)
     {
         setCursor(Qt::CrossCursor);
         setFocusPolicy(Qt::StrongFocus);
@@ -177,9 +120,10 @@ public:
     QImage image;
     bool opaque = false;
     Tool tool = Tool::Arrow;
-    QColor color = QColor("#ff5373");
-    qreal strokeWidth = 6;
+    QColor color = QColor(QRgb(markColors[0].second));
+    qreal strokeWidth = strokeWidths[defaultStrokeIndex];
     std::function<void(Annotation)> onCommit;
+    std::function<void(qreal)> onZoomBy;
 
     void cancelStroke()
     {
@@ -196,6 +140,15 @@ public:
     }
 
 protected:
+    bool event(QEvent *event) override
+    {
+        if (const qreal factor = pinchFactor(event); factor > 0 && onZoomBy) {
+            onZoomBy(factor);
+            return true;
+        }
+        return QWidget::event(event);
+    }
+
     void hideEvent(QHideEvent *event) override
     {
         cancelStroke();
@@ -205,13 +158,14 @@ protected:
     void paintEvent(QPaintEvent *event) override
     {
         QPainter painter(this);
-        painter.setRenderHint(QPainter::SmoothPixmapTransform);
-        if (image.isNull() || !opaque) {
-            painter.fillRect(event->rect(), QColor("#111420"));
-        }
         if (image.isNull()) {
+            painter.fillRect(event->rect(), theme::colors().stage);
             return;
         }
+        if (!opaque) {
+            paintChecker(painter, event->rect());
+        }
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
         painter.scale(qreal(width()) / image.width(), qreal(height()) / image.height());
         painter.drawImage(QPointF(0, 0), image);
         if (!draft) {
@@ -219,14 +173,16 @@ protected:
         }
 
         if (draft->tool == Tool::Blur) {
-            QPen outline(QColor("#d7c7ff"));
+            const QColor accent = theme::overlayAccent;
+            QPen outline(accent);
             outline.setCosmetic(true);
+            outline.setWidthF(1.5);
             outline.setStyle(Qt::DashLine);
             painter.setPen(outline);
-            painter.setBrush(QColor(147, 105, 255, 72));
+            painter.setBrush(theme::withAlpha(accent, 0.22));
             painter.drawRect(draft->bounds());
         } else {
-            screenframe::paintAnnotation(painter, *draft);
+            paintAnnotation(painter, *draft);
         }
     }
 
@@ -235,7 +191,7 @@ protected:
         if (event->button() != Qt::LeftButton || image.isNull()) {
             return;
         }
-        const QColor markColor = tool == Tool::Redact ? QColor("#131522") : color;
+        const QColor markColor = tool == Tool::Redact ? QColor(0x13, 0x15, 0x22) : color;
         draft = Annotation{tool, markColor, strokeWidth, {imagePoint(event->position())}};
         update(draftDamage());
     }
@@ -273,8 +229,7 @@ private:
         }
         const qreal scaleX = qreal(width()) / image.width();
         const qreal scaleY = qreal(height()) / image.height();
-        const QRectF mapped(area.x() * scaleX, area.y() * scaleY,
-                            area.width() * scaleX, area.height() * scaleY);
+        const QRectF mapped(area.x() * scaleX, area.y() * scaleY, area.width() * scaleX, area.height() * scaleY);
         return mapped.toAlignedRect().adjusted(-2, -2, 2, 2);
     }
 
@@ -303,27 +258,41 @@ private:
     }
 };
 
+// The scrollable stage behind the screenshot. It paints the backdrop and the screenshot's shadow.
 class Workspace final : public QScrollArea {
 public:
-    using QScrollArea::QScrollArea;
+    explicit Workspace(QWidget *parent) : QScrollArea(parent)
+    {
+        setFrameShape(QFrame::NoFrame);
+        setAlignment(Qt::AlignCenter);
+    }
+
+    QWidget *subject = nullptr;
     std::function<void()> onResize;
-    std::function<void(int)> onZoom;
+    std::function<void(qreal)> onZoomBy;
 
 protected:
     bool viewportEvent(QEvent *event) override
     {
+        if (const qreal factor = pinchFactor(event); factor > 0 && onZoomBy) {
+            onZoomBy(factor);
+            return true;
+        }
         if (event->type() != QEvent::Paint) {
             return QScrollArea::viewportEvent(event);
         }
+        const theme::Palette &c = theme::colors();
         const QRect damage = static_cast<QPaintEvent *>(event)->rect();
         QPainter painter(viewport());
-        painter.fillRect(damage, QColor("#111421"));
-        constexpr int tile = 16;
-        for (int y = damage.top() / tile * tile; y <= damage.bottom(); y += tile) {
-            for (int x = damage.left() / tile * tile; x <= damage.right(); x += tile) {
-                if ((x / tile + y / tile) % 2 == 0) {
-                    painter.fillRect(x, y, tile, tile, QColor("#181c2a"));
-                }
+        painter.fillRect(damage, c.stage);
+        if (subject && subject->isVisible() && subject->width() > 1) {
+            const QRect frame(subject->mapTo(viewport(), QPoint(0, 0)), subject->size());
+            if (damage.intersects(frame.adjusted(-24, -24, 24, 24))) {
+                theme::paintShadow(painter, QRectF(frame), 3, 16, 5, c.dark ? 1.6 : 1.1);
+                painter.setRenderHint(QPainter::Antialiasing);
+                painter.setPen(QPen(theme::withAlpha(c.text, c.dark ? 0.10 : 0.12), 1));
+                painter.setBrush(Qt::NoBrush);
+                painter.drawRect(QRectF(frame).adjusted(-0.5, -0.5, 0.5, 0.5));
             }
         }
         return true;
@@ -340,8 +309,8 @@ protected:
     void wheelEvent(QWheelEvent *event) override
     {
         const int delta = event->angleDelta().y();
-        if (onZoom && (event->modifiers() & Qt::ControlModifier) && delta != 0) {
-            onZoom(delta > 0 ? 1 : -1);
+        if (onZoomBy && (event->modifiers() & Qt::ControlModifier) && delta != 0) {
+            onZoomBy(std::pow(1.2, delta / 120.0));
             event->accept();
             return;
         }
@@ -349,45 +318,237 @@ protected:
     }
 };
 
-constexpr auto editorStyles = R"(
-    QMainWindow, QWidget#editorRoot { background: #111421; color: #edf0ff; }
-    QLabel { color: #edf0ff; }
-    QWidget#header, QWidget#footer { background: #191d2d; }
-    QLabel#brand { color: #f1edff; font-size: 17px; font-weight: 750; }
-    QLabel#brandIcon { background: #342758; border: 1px solid #59447f; border-radius: 8px; }
-    QWidget#launcher { background: #111421; }
-    QWidget#launchCard { background: #1b2032; border: 1px solid #313950; border-radius: 13px; }
-    QLabel#launchIcon { background: #2e244b; border-radius: 11px; }
-    QLabel#launchHeading { font-size: 30px; font-weight: 750; }
-    QLabel#cardHeading { font-size: 16px; font-weight: 700; }
-    QLabel#section { color: #a0aaca; font-size: 12px; font-weight: 650; }
-    QLabel#muted, QLabel#status { color: #b2bbd8; font-size: 12px; }
-    QLabel#warning { color: #f2cb86; background: #31291e; border: 1px solid #584429; padding: 7px 12px; }
-    QLabel#key { color: #dfd4ff; background: #2b2942; border: 1px solid #443960; border-radius: 4px; padding: 3px 6px; font-size: 11px; }
-    QWidget#rail { background: #181c2c; border-right: 1px solid #292f44; }
-    QFrame#divider { color: #343b54; background: #343b54; max-height: 1px; }
-    QPushButton, QToolButton, QComboBox {
-        background: #22283c; border: 1px solid #343d56; border-radius: 6px; padding: 6px 10px;
-        color: #eef0ff; font-weight: 550;
+// A widget whose owner lays out its children by hand.
+class Frame final : public QWidget {
+public:
+    using QWidget::QWidget;
+    std::function<void()> onResize;
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QWidget::resizeEvent(event);
+        if (onResize) {
+            onResize();
+        }
     }
-    QPushButton:hover, QToolButton:hover, QComboBox:hover { background: #2b334d; border-color: #58658a; }
-    QPushButton:focus, QToolButton:focus, QComboBox:focus { border: 1px solid #c4a8ff; }
-    QPushButton:disabled, QToolButton:disabled, QComboBox:disabled { color: #828ba8; background: #1c2032; }
-    QToolButton { padding: 5px 7px; }
-    QPushButton#primary { background: #7053c7; border-color: #8e6ce4; color: white; font-weight: 700; }
-    QPushButton#primary:hover { background: #8261dd; }
-    QPushButton#primary:focus { border-color: #f1e6ff; }
-    QPushButton#tool { background: transparent; border-color: transparent; text-align: left; }
-    QPushButton#tool:hover { background: #242a41; }
-    QPushButton#tool:checked { background: #342752; border-color: #6c539f; color: #f6efff; }
-    QPushButton#tool:focus { border-color: #c4a8ff; }
-    QComboBox { padding: 4px 8px; }
-    QComboBox QAbstractItemView { background: #22283c; color: #f0ecff; selection-background-color: #604a98; }
-    QScrollBar:vertical { background: #181d2c; width: 12px; margin: 0; }
-    QScrollBar:horizontal { background: #181d2c; height: 12px; margin: 0; }
-    QScrollBar::handle { background: #475270; border-radius: 4px; min-width: 25px; min-height: 25px; }
-    QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
-    QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+};
+
+class TopBar final : public QWidget {
+public:
+    using QWidget::QWidget;
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const theme::Palette &c = theme::colors();
+        QPainter painter(this);
+        painter.fillRect(rect(), c.surface);
+        painter.fillRect(QRectF(0, height() - 1, width(), 1), c.border);
+    }
+};
+
+class Brand final : public QWidget {
+public:
+    explicit Brand(QWidget *parent) : QWidget(parent)
+    {
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        setAccessibleName(QStringLiteral("ScreenFrame"));
+    }
+
+    void setShowsName(bool value)
+    {
+        if (showsName != value) {
+            showsName = value;
+            updateGeometry();
+            update();
+        }
+    }
+
+    QSize sizeHint() const override
+    {
+        const int name = showsName ? QFontMetrics(theme::font(14, theme::Weight::Semibold)).horizontalAdvance(text()) + 9 : 0;
+        return QSize(22 + name, 32);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const theme::Palette &c = theme::colors();
+        QPainter painter(this);
+        paintIcon(painter, Icon::Region, QRectF(0, 5, 22, 22), c.accent, 2);
+        if (showsName) {
+            painter.setPen(c.text);
+            painter.setFont(theme::font(14, theme::Weight::Semibold));
+            painter.drawText(QRectF(31, 0, width() - 31, height()), Qt::AlignVCenter | Qt::AlignLeft, text());
+        }
+    }
+
+private:
+    static QString text() { return QStringLiteral("ScreenFrame"); }
+    bool showsName = true;
+};
+
+// The empty editor: what ScreenFrame is for, framed by the viewfinder corners of its icon.
+class LauncherPage final : public QWidget {
+public:
+    using QWidget::QWidget;
+    QWidget *content = nullptr;
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const theme::Palette &c = theme::colors();
+        QPainter painter(this);
+        painter.fillRect(rect(), c.stage);
+        if (!content) {
+            return;
+        }
+        const QRectF frame = QRectF(content->geometry()).adjusted(-52, -46, 52, 46);
+        theme::paintBrackets(painter, frame, 30, 2.5, theme::withAlpha(c.accent, 0.9));
+    }
+};
+
+class Swatch final : public QAbstractButton {
+public:
+    Swatch(const QString &name, const QColor &color, QWidget *parent) : QAbstractButton(parent), color(color)
+    {
+        setCheckable(true);
+        setAttribute(Qt::WA_Hover);
+        setFocusPolicy(Qt::TabFocus);
+        setToolTip(name);
+        setAccessibleName(name);
+    }
+
+    QColor color;
+    QSize sizeHint() const override { return QSize(24, theme::controlHeight); }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const theme::Palette &c = theme::colors();
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        if (!isEnabled()) {
+            painter.setOpacity(0.28);
+        }
+        const QPointF center = QRectF(rect()).center();
+        const qreal radius = underMouse() && isEnabled() && !isChecked() ? 8 : 7;
+        if (isChecked()) {
+            painter.setPen(QPen(c.text, 2));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawEllipse(center, 10.5, 10.5);
+        }
+        painter.setPen(QPen(theme::withAlpha(c.text, 0.22), 1));
+        painter.setBrush(color);
+        painter.drawEllipse(center, radius, radius);
+        if (hasFocus()) {
+            theme::paintFocusRing(painter, QRectF(rect()).adjusted(0, 3, 0, -3), 6);
+        }
+    }
+};
+
+class StrokeChoice final : public QAbstractButton {
+public:
+    StrokeChoice(int pixels, QWidget *parent) : QAbstractButton(parent), pixels(pixels)
+    {
+        setCheckable(true);
+        setAttribute(Qt::WA_Hover);
+        setFocusPolicy(Qt::TabFocus);
+        setToolTip(QStringLiteral("%1 px stroke").arg(pixels));
+        setAccessibleName(toolTip());
+    }
+
+    int pixels;
+    QSize sizeHint() const override { return QSize(26, theme::controlHeight); }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        const theme::Palette &c = theme::colors();
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        if (!isEnabled()) {
+            painter.setOpacity(0.28);
+        }
+        const QRectF frame = QRectF(rect()).adjusted(1, 4, -1, -4);
+        if (isChecked()) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(c.accentSoft);
+            painter.drawRoundedRect(frame, 6, 6);
+        } else if (underMouse() && isEnabled()) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(c.controlHover);
+            painter.drawRoundedRect(frame, 6, 6);
+        }
+        const qreal diameter = 2.5 + pixels * 0.72;
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(isChecked() ? c.accent : c.textMuted);
+        painter.drawEllipse(frame.center(), diameter / 2, diameter / 2);
+        if (hasFocus()) {
+            theme::paintFocusRing(painter, frame, 6);
+        }
+    }
+};
+
+// The tool island draws the current tool's highlight so it can glide between tools.
+class ToolIsland final : public Island {
+public:
+    explicit ToolIsland(QWidget *parent) : Island(parent), animation(new QVariantAnimation(this))
+    {
+        animation->setDuration(200);
+        animation->setEasingCurve(QEasingCurve::OutCubic);
+        QObject::connect(animation, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) {
+            thumb = value.toRectF();
+            update();
+        });
+    }
+
+    void track(QWidget *button, bool animated)
+    {
+        target = button;
+        const QRectF destination = button ? QRectF(button->geometry()) : QRectF();
+        if (animated && isVisible() && !thumb.isEmpty()) {
+            animation->stop();
+            animation->setStartValue(thumb);
+            animation->setEndValue(destination);
+            animation->start();
+        } else if (animation->state() != QAbstractAnimation::Running) {
+            thumb = destination;
+            update();
+        }
+    }
+
+    void sync()
+    {
+        track(target, false);
+    }
+
+protected:
+    void paintPanel(QPainter &painter) override
+    {
+        if (thumb.isEmpty()) {
+            return;
+        }
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(theme::colors().accentSoft);
+        painter.drawRoundedRect(thumb, theme::radius, theme::radius);
+    }
+
+    void resizeEvent(QResizeEvent *event) override
+    {
+        Island::resizeEvent(event);
+        sync();
+    }
+
+private:
+    QVariantAnimation *animation;
+    QWidget *target = nullptr;
+    QRectF thumb;
+};
+
+constexpr auto editorRules = R"(
+    QLabel#hero { font-size: 30px; font-weight: 600; }
 )";
 
 struct UndoPatch {
@@ -406,62 +567,74 @@ struct UndoPatch {
     }
 };
 
-}
+} // namespace
 
 struct EditorWindow::Ui {
     explicit Ui(EditorWindow &window) : window(window)
     {
         window.setWindowTitle(QStringLiteral("ScreenFrame[*]"));
-        window.setMinimumSize(700, 480);
-        window.resize(1080, 740);
+        window.setMinimumSize(720, 500);
+        window.resize(1180, 780);
         root = new QWidget(&window);
-        root->setObjectName(QStringLiteral("editorRoot"));
-        root->setStyleSheet(QString::fromUtf8(editorStyles));
+        root->setObjectName(QStringLiteral("surface"));
+        root->setAttribute(Qt::WA_StyledBackground);
+        theme::attach(root, editorRules);
         window.setCentralWidget(root);
 
-        auto *layout = new QVBoxLayout(root);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(0);
-        layout->addWidget(makeHeader());
-        warning = makeLabel({}, "warning", root);
-        warning->setWordWrap(true);
-        warning->hide();
-        layout->addWidget(warning);
-        libraryStatus = makeLabel({}, "warning", root);
-        libraryStatus->setTextFormat(Qt::PlainText);
-        libraryStatus->setWordWrap(true);
-        libraryStatus->hide();
-        layout->addWidget(libraryStatus);
+        auto *column = new QVBoxLayout(root);
+        column->setContentsMargins(0, 0, 0, 0);
+        column->setSpacing(0);
+        column->addWidget(makeTopBar());
+        shortcutBanner = new Banner(root);
+        libraryBanner = new Banner(root);
+        column->addWidget(shortcutBanner);
+        column->addWidget(libraryBanner);
 
-        pages = new QStackedWidget(root);
-        layout->addWidget(pages, 1);
+        stage = new Frame(root);
+        column->addWidget(stage, 1);
+        pages = new QStackedWidget(stage);
         pages->addWidget(makeLauncher());
         pages->addWidget(makeEditor());
+        toast = new Notice(Notice::Success, stage);
+        QObject::connect(toast, &Notice::messageChanged, &window, [this] { layoutStage(); });
+        stage->onResize = [this] { layoutStage(); };
+
         addShortcuts();
+        selectTool(Tool::Arrow, false);
         refreshControls();
     }
 
     EditorWindow &window;
     QWidget *root = nullptr;
+    Frame *stage = nullptr;
     QStackedWidget *pages = nullptr;
-    QLabel *warning = nullptr;
-    QLabel *libraryStatus = nullptr;
-    QLabel *fullKey = nullptr;
-    QLabel *regionKey = nullptr;
-    QLabel *dimensions = nullptr;
-    QLabel *status = nullptr;
-    QLabel *zoomLabel = nullptr;
-    QPushButton *full = nullptr;
-    QPushButton *region = nullptr;
-    QPushButton *save = nullptr;
-    QPushButton *copy = nullptr;
-    QToolButton *undo = nullptr;
-    QToolButton *redo = nullptr;
-    QComboBox *color = nullptr;
-    QComboBox *thickness = nullptr;
-    QButtonGroup *tools = nullptr;
+    Banner *shortcutBanner = nullptr;
+    Banner *libraryBanner = nullptr;
+    Notice *toast = nullptr;
+    Brand *brand = nullptr;
+    Button *regionButton = nullptr;
+    Button *screenButton = nullptr;
+    Button *libraryButton = nullptr;
+    Button *undo = nullptr;
+    Button *redo = nullptr;
+    QWidget *editSeparator = nullptr;
+    Button *copy = nullptr;
+    Button *save = nullptr;
+    Button *heroRegion = nullptr;
+    Button *heroScreen = nullptr;
+    QLabel *shortcutTip = nullptr;
+    Frame *editorPage = nullptr;
     Workspace *workspace = nullptr;
+    QWidget *holder = nullptr;
     ScreenshotCanvas *canvas = nullptr;
+    ToolIsland *toolIsland = nullptr;
+    Island *zoomIsland = nullptr;
+    QLabel *dimensions = nullptr;
+    QWidget *dimensionsSeparator = nullptr;
+    Button *zoomButton = nullptr;
+    QButtonGroup *tools = nullptr;
+    QList<Swatch *> swatches;
+    QList<StrokeChoice *> strokes;
     QImage source;
     QVector<Annotation> annotations;
     std::deque<UndoPatch> undoPatches;
@@ -472,128 +645,141 @@ struct EditorWindow::Ui {
     bool fit = true;
     QMetaObject::Connection screenChangedConnection;
 
-    QWidget *makeHeader()
+    QWidget *makeTopBar()
     {
-        auto *header = new QWidget(root);
-        header->setObjectName(QStringLiteral("header"));
-        auto *row = new QHBoxLayout(header);
-        row->setContentsMargins(16, 11, 16, 11);
-        row->setSpacing(8);
-        auto *mark = makeLabel({}, "brandIcon", header);
-        mark->setFixedSize(33, 33);
-        mark->setAlignment(Qt::AlignCenter);
-        mark->setPixmap(makeIcon(Icon::Region, QColor("#c9b0ff")).pixmap(QSize(20, 20)));
-        row->addWidget(mark);
-        row->addWidget(makeLabel(QStringLiteral("ScreenFrame"), "brand", header));
+        auto *bar = new TopBar(root);
+        auto *row = new QHBoxLayout(bar);
+        row->setContentsMargins(16, 10, 12, 10);
+        row->setSpacing(4);
+        brand = new Brand(bar);
+        row->addWidget(brand);
+        row->addSpacing(18);
+
+        regionButton = new Button(Button::Ghost, Icon::Region, QStringLiteral("Region"), bar);
+        screenButton = new Button(Button::Ghost, Icon::Screen, QStringLiteral("Screen"), bar);
+        libraryButton = new Button(Button::Ghost, Icon::Library, QStringLiteral("Library"), bar);
+        regionButton->setAccessibleName(QStringLiteral("Capture a region"));
+        screenButton->setAccessibleName(QStringLiteral("Capture the screen"));
+        libraryButton->setToolTip(QStringLiteral("Screenshots from all your devices"));
+        row->addWidget(regionButton);
+        row->addWidget(screenButton);
+        row->addWidget(libraryButton);
         row->addStretch();
-        full = makeButton(QStringLiteral("Full screen"), Icon::Full, header);
-        region = makeButton(QStringLiteral("Region"), Icon::Region, header);
-        row->addWidget(full);
-        row->addWidget(region);
-        QObject::connect(full, &QPushButton::clicked, &window, &EditorWindow::fullCaptureRequested);
-        QObject::connect(region, &QPushButton::clicked, &window, &EditorWindow::regionCaptureRequested);
+        QObject::connect(regionButton, &QPushButton::clicked, &window, &EditorWindow::regionCaptureRequested);
+        QObject::connect(screenButton, &QPushButton::clicked, &window, &EditorWindow::fullCaptureRequested);
+        QObject::connect(libraryButton, &QPushButton::clicked, &window, &EditorWindow::libraryRequested);
 
-        auto *library = makeButton(QStringLiteral("Library"), Icon::Library, header);
-        row->addWidget(library);
-        QObject::connect(library, &QPushButton::clicked, &window, &EditorWindow::libraryRequested);
+        undo = new Button(Button::Ghost, Icon::Undo, {}, bar);
+        redo = new Button(Button::Ghost, Icon::Redo, {}, bar);
+        undo->setToolTip(withKeys(QStringLiteral("Undo"), nativeKeys(QKeySequence::Undo)));
+        redo->setToolTip(withKeys(QStringLiteral("Redo"), nativeKeys(QKeySequence::Redo)));
+        undo->setAccessibleName(QStringLiteral("Undo"));
+        redo->setAccessibleName(QStringLiteral("Redo"));
+        QObject::connect(undo, &QPushButton::clicked, &window, [this] { moveHistory(-1); });
+        QObject::connect(redo, &QPushButton::clicked, &window, [this] { moveHistory(1); });
+        row->addWidget(undo);
+        row->addWidget(redo);
+        editSeparator = separator(bar);
+        row->addWidget(editSeparator);
 
-        copy = makeButton(QStringLiteral("Copy"), Icon::Copy, header);
-        save = makeButton(QStringLiteral("Save PNG"), Icon::Save, header, "primary");
-        row->addWidget(copy);
-        row->addWidget(save);
-        auto *settings = new QPushButton(QStringLiteral("Settings"), header);
-        row->addWidget(settings);
-        QObject::connect(settings, &QPushButton::clicked, &window, &EditorWindow::settingsRequested);
+        copy = new Button(Button::Tonal, Icon::Copy, QStringLiteral("Copy"), bar);
+        save = new Button(Button::Primary, Icon::Save, QStringLiteral("Save"), bar);
+        copy->setToolTip(withKeys(QStringLiteral("Copy to clipboard"), nativeKeys(QKeySequence::Copy)));
+        save->setToolTip(withKeys(QStringLiteral("Save as PNG"), nativeKeys(QKeySequence::Save)));
         QObject::connect(copy, &QPushButton::clicked, &window, [this] { copyImage(); });
         QObject::connect(save, &QPushButton::clicked, &window, [this] { saveImage(); });
-        return header;
+        row->addWidget(copy);
+        row->addSpacing(4);
+        row->addWidget(save);
+        row->addSpacing(4);
+
+        auto *settings = new Button(Button::Ghost, Icon::Settings, {}, bar);
+        settings->setToolTip(QStringLiteral("Settings"));
+        settings->setAccessibleName(QStringLiteral("Settings"));
+        QObject::connect(settings, &QPushButton::clicked, &window, &EditorWindow::settingsRequested);
+        row->addWidget(settings);
+        return bar;
     }
 
     QWidget *makeLauncher()
     {
-        auto *page = new QWidget(pages);
-        page->setObjectName(QStringLiteral("launcher"));
+        auto *page = new LauncherPage(pages);
         auto *column = new QVBoxLayout(page);
-        column->setContentsMargins(26, 24, 26, 24);
-        column->setSpacing(12);
-        column->addStretch(2);
-        auto *content = new QWidget(page);
-        auto *contentLayout = new QVBoxLayout(content);
-        contentLayout->setContentsMargins(0, 0, 0, 0);
-        contentLayout->setSpacing(16);
-        contentLayout->addWidget(makeLabel(QStringLiteral("Take a screenshot"), "launchHeading", content));
+        column->setContentsMargins(24, 24, 24, 24);
+        column->addStretch(3);
 
-        auto *cards = new QHBoxLayout;
-        cards->setSpacing(14);
-        cards->addWidget(makeCaptureCard(content, true, fullKey), 1);
-        cards->addWidget(makeCaptureCard(content, false, regionKey), 1);
-        contentLayout->addLayout(cards);
+        auto *content = new QWidget(page);
+        content->setFixedWidth(560);
+        auto *stack = new QVBoxLayout(content);
+        stack->setContentsMargins(0, 0, 0, 0);
+        stack->setSpacing(0);
+        auto *title = theme::label(QStringLiteral("Take a screenshot"), "hero", content);
+        title->setAlignment(Qt::AlignCenter);
+        stack->addWidget(title);
+        stack->addSpacing(10);
+        auto *subtitle = theme::label(QStringLiteral("Select part of the screen or capture all of it, "
+                                                     "then mark it up and copy or save."), "muted", content);
+        subtitle->setAlignment(Qt::AlignCenter);
+        subtitle->setWordWrap(true);
+        subtitle->setContentsMargins(70, 0, 70, 0);
+        stack->addWidget(subtitle);
+        stack->addSpacing(30);
+
+        heroRegion = new Button(Button::Primary, Icon::Region, QStringLiteral("Select region"), content);
+        heroScreen = new Button(Button::Tonal, Icon::Screen, QStringLiteral("Capture screen"), content);
+        heroRegion->setAccessibleName(QStringLiteral("Select screen region"));
+        heroScreen->setAccessibleName(QStringLiteral("Capture full screen"));
+        heroRegion->setLarge(true);
+        heroScreen->setLarge(true);
+        QObject::connect(heroRegion, &QPushButton::clicked, &window, &EditorWindow::regionCaptureRequested);
+        QObject::connect(heroScreen, &QPushButton::clicked, &window, &EditorWindow::fullCaptureRequested);
+        auto *buttons = new QHBoxLayout;
+        buttons->setSpacing(10);
+        buttons->addStretch();
+        buttons->addWidget(heroRegion);
+        buttons->addWidget(heroScreen);
+        buttons->addStretch();
+        stack->addLayout(buttons);
+        stack->addSpacing(22);
+
+#ifdef Q_OS_MACOS
+        const QString tip = QStringLiteral("The shortcuts work in any app while ScreenFrame is in the menu bar.");
+#else
+        const QString tip = QStringLiteral("The shortcuts work in any app while ScreenFrame is running.");
+#endif
+        shortcutTip = theme::label(tip, "caption", content);
+        shortcutTip->setAlignment(Qt::AlignCenter);
+        shortcutTip->setWordWrap(true);
+        shortcutTip->hide();
+        stack->addWidget(shortcutTip);
+
         auto *centered = new QHBoxLayout;
-        centered->setSpacing(0);
         centered->addStretch();
-        content->setFixedWidth(564);
         centered->addWidget(content);
         centered->addStretch();
         column->addLayout(centered);
-        column->addStretch(3);
+        column->addStretch(4);
+        page->content = content;
         return page;
-    }
-
-    QWidget *makeCaptureCard(QWidget *parent, bool fullScreen, QLabel *&key)
-    {
-        auto *card = new QWidget(parent);
-        card->setObjectName(QStringLiteral("launchCard"));
-        auto *column = new QVBoxLayout(card);
-        column->setContentsMargins(17, 17, 17, 16);
-        column->setSpacing(8);
-        const Icon icon = fullScreen ? Icon::Full : Icon::Region;
-        auto *symbol = makeLabel({}, "launchIcon", card);
-        symbol->setFixedSize(46, 46);
-        symbol->setAlignment(Qt::AlignCenter);
-        symbol->setPixmap(makeIcon(icon, QColor("#c9b0ff")).pixmap(QSize(27, 27)));
-        column->addWidget(symbol);
-        column->addSpacing(2);
-        const QString title = fullScreen ? QStringLiteral("Full screen") : QStringLiteral("Screen region");
-        column->addWidget(makeLabel(title, "cardHeading", card));
-        auto *description = makeLabel(fullScreen ? QStringLiteral("Capture the current display")
-                                                  : QStringLiteral("Select an area on the frozen screen"), "muted", card);
-        description->setWordWrap(true);
-        column->addWidget(description);
-        column->addSpacing(10);
-        auto *controls = new QHBoxLayout;
-        auto *button = new QPushButton(fullScreen ? QStringLiteral("Capture") : QStringLiteral("Select"), card);
-        button->setAccessibleName(fullScreen ? QStringLiteral("Capture full screen") : QStringLiteral("Select screen region"));
-        if (!fullScreen) {
-            button->setObjectName(QStringLiteral("primary"));
-        }
-        QObject::connect(button, &QPushButton::clicked, &window,
-                         fullScreen ? &EditorWindow::fullCaptureRequested : &EditorWindow::regionCaptureRequested);
-        key = makeLabel({}, "key", card);
-        key->hide();
-        controls->addWidget(button);
-        controls->addStretch();
-        controls->addWidget(key);
-        column->addLayout(controls);
-        return card;
     }
 
     QWidget *makeEditor()
     {
-        auto *page = new QWidget(pages);
-        auto *layout = new QVBoxLayout(page);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(0);
-        auto *body = new QHBoxLayout;
-        body->setSpacing(0);
-        body->addWidget(makeRail(page));
-
-        workspace = new Workspace(page);
-        workspace->setFrameShape(QFrame::NoFrame);
-        workspace->setAlignment(Qt::AlignCenter);
-        canvas = new ScreenshotCanvas;
-        workspace->setWidget(canvas);
-        workspace->onResize = [this] { if (fit) updateZoom(); };
-        workspace->onZoom = [this](int direction) { stepZoom(direction); };
+        editorPage = new Frame(pages);
+        workspace = new Workspace(editorPage);
+        holder = new QWidget;
+        canvas = new ScreenshotCanvas(holder);
+        workspace->setWidget(holder);
+        holder->setAutoFillBackground(false);
+        workspace->subject = canvas;
+        workspace->onResize = [this] {
+            if (fit) {
+                updateZoom();
+            }
+        };
+        const auto zoomBy = [this](qreal factor) { setZoom(zoom * factor); };
+        workspace->onZoomBy = zoomBy;
+        canvas->onZoomBy = zoomBy;
         canvas->onCommit = [this](Annotation annotation) {
             if (cleanCount > historyCount) {
                 cleanCount = -1;
@@ -602,130 +788,135 @@ struct EditorWindow::Ui {
             annotations.push_back(std::move(annotation));
             applyNextAnnotation();
         };
-        body->addWidget(workspace, 1);
-        layout->addLayout(body, 1);
-        layout->addWidget(makeFooter(page));
-        return page;
+        makeToolIsland();
+        makeZoomIsland();
+        editorPage->onResize = [this] { layoutEditor(); };
+        return editorPage;
     }
 
-    QWidget *makeRail(QWidget *parent)
+    void makeToolIsland()
     {
-        auto *rail = new QWidget(parent);
-        rail->setObjectName(QStringLiteral("rail"));
-        rail->setFixedWidth(162);
-        auto *column = new QVBoxLayout(rail);
-        column->setContentsMargins(11, 12, 11, 10);
-        column->setSpacing(4);
-        column->addWidget(makeLabel(QStringLiteral("Tools"), "section", rail));
-        column->addSpacing(3);
-        tools = new QButtonGroup(rail);
-        struct ToolChoice { Tool tool; Icon icon; const char *label; const char *key; };
-        const std::array choices{
-            ToolChoice{Tool::Arrow, Icon::Arrow, "Arrow", "A"},
-            ToolChoice{Tool::Pen, Icon::Pen, "Pen", "P"},
-            ToolChoice{Tool::Rectangle, Icon::Rectangle, "Rectangle", "R"},
-            ToolChoice{Tool::Blur, Icon::Blur, "Blur", "B"},
-            ToolChoice{Tool::Redact, Icon::Redact, "Redact", "X"},
-        };
-        for (const auto &choice : choices) {
+        toolIsland = new ToolIsland(editorPage);
+        QHBoxLayout *row = toolIsland->row();
+        tools = new QButtonGroup(toolIsland);
+        for (const auto &choice : toolChoices) {
             const QString label = QString::fromUtf8(choice.label);
             const QString key = QString::fromLatin1(choice.key);
-            auto *button = makeButton(label, choice.icon, rail, "tool");
+            auto *button = new Button(Button::Ghost, choice.icon, {}, toolIsland);
             button->setCheckable(true);
-            button->setToolTip(label + QStringLiteral(" · ") + key);
+            button->setCheckedDrawnByParent(true);
+            button->setToolTip(withKeys(label, key));
+            button->setAccessibleName(label);
             tools->addButton(button, static_cast<int>(choice.tool));
-            column->addWidget(button);
-            addShortcut(QKeySequence(key), [this, button] { if (!source.isNull()) button->click(); });
+            row->addWidget(button);
+            addShortcut(QKeySequence(key), [this, button] {
+                if (!source.isNull()) {
+                    button->click();
+                }
+            });
         }
-        tools->button(static_cast<int>(Tool::Arrow))->setChecked(true);
-        QObject::connect(tools, &QButtonGroup::idClicked, &window, [this](int id) {
-            canvas->cancelStroke();
-            canvas->tool = static_cast<Tool>(id);
-            status->clear();
-            refreshControls();
-        });
+        QObject::connect(tools, &QButtonGroup::idClicked, &window, [this](int id) { selectTool(static_cast<Tool>(id), true); });
 
-        auto *divider = new QFrame(rail);
-        divider->setObjectName(QStringLiteral("divider"));
-        divider->setFrameShape(QFrame::HLine);
-        column->addSpacing(5);
-        column->addWidget(divider);
-        column->addSpacing(5);
-        column->addWidget(makeLabel(QStringLiteral("Color"), "section", rail));
-        color = new QComboBox(rail);
-        color->setAccessibleName(QStringLiteral("Stroke color"));
-        const std::array colors{
-            std::pair{"Red", "#ff5373"}, std::pair{"Orange", "#ff9e4b"},
-            std::pair{"Yellow", "#ffdb6a"}, std::pair{"Green", "#60d9a2"},
-            std::pair{"Blue", "#6db6ff"}, std::pair{"Purple", "#b58aff"},
-            std::pair{"White", "#ffffff"}, std::pair{"Black", "#111420"},
-        };
-        for (const auto &[name, value] : colors) {
-            const QColor swatch(QString::fromLatin1(value));
-            QPixmap pixmap(14, 14);
-            pixmap.fill(swatch);
-            color->addItem(QIcon(pixmap), QString::fromUtf8(name), swatch);
+        toolIsland->addSeparator();
+        auto *colorGroup = new QButtonGroup(toolIsland);
+        for (const auto &[name, value] : markColors) {
+            auto *swatch = new Swatch(QString::fromLatin1(name), QColor(QRgb(value)), toolIsland);
+            colorGroup->addButton(swatch);
+            swatches.append(swatch);
+            row->addWidget(swatch);
+            QObject::connect(swatch, &QAbstractButton::clicked, &window, [this, swatch] { canvas->color = swatch->color; });
         }
-        QObject::connect(color, &QComboBox::currentIndexChanged, &window, [this] {
-            canvas->color = color->currentData().value<QColor>();
-        });
-        column->addWidget(color);
+        swatches.first()->setChecked(true);
 
-        column->addSpacing(3);
-        column->addWidget(makeLabel(QStringLiteral("Thickness"), "section", rail));
-        thickness = new QComboBox(rail);
-        thickness->setAccessibleName(QStringLiteral("Stroke thickness"));
-        for (const int pixels : {2, 4, 6, 10, 16, 24}) {
-            thickness->addItem(QStringLiteral("%1 px").arg(pixels), pixels);
+        toolIsland->addSeparator();
+        auto *strokeGroup = new QButtonGroup(toolIsland);
+        for (const int pixels : strokeWidths) {
+            auto *choice = new StrokeChoice(pixels, toolIsland);
+            strokeGroup->addButton(choice);
+            strokes.append(choice);
+            row->addWidget(choice);
+            QObject::connect(choice, &QAbstractButton::clicked, &window, [this, pixels] { canvas->strokeWidth = pixels; });
         }
-        thickness->setCurrentIndex(2);
-        QObject::connect(thickness, &QComboBox::currentIndexChanged, &window, [this] {
-            canvas->strokeWidth = thickness->currentData().toInt();
-        });
-        column->addWidget(thickness);
-        column->addStretch();
-        return rail;
+        strokes.at(defaultStrokeIndex)->setChecked(true);
     }
 
-    QWidget *makeFooter(QWidget *parent)
+    void makeZoomIsland()
     {
-        auto *footer = new QWidget(parent);
-        footer->setObjectName(QStringLiteral("footer"));
-        auto *row = new QHBoxLayout(footer);
-        row->setContentsMargins(12, 6, 12, 6);
-        row->setSpacing(6);
-        undo = makeIconButton(Icon::Undo, QStringLiteral("Undo"), footer);
-        redo = makeIconButton(Icon::Redo, QStringLiteral("Redo"), footer);
-        QObject::connect(undo, &QToolButton::clicked, &window, [this] { moveHistory(-1); });
-        QObject::connect(redo, &QToolButton::clicked, &window, [this] { moveHistory(1); });
-        row->addWidget(undo);
-        row->addWidget(redo);
-        row->addSpacing(7);
-        dimensions = makeLabel({}, "muted", footer);
-        status = makeLabel({}, "status", footer);
+        zoomIsland = new Island(editorPage);
+        QHBoxLayout *row = zoomIsland->row();
+        dimensions = theme::label({}, "caption", zoomIsland);
+        dimensions->setContentsMargins(8, 0, 4, 0);
+        dimensions->setToolTip(QStringLiteral("Screenshot size in pixels"));
         row->addWidget(dimensions);
-        row->addSpacing(9);
-        row->addWidget(status, 1);
-
-        auto *fitButton = new QPushButton(QStringLiteral("Fit"), footer);
-        fitButton->setToolTip(QStringLiteral("Fit screenshot to window · 0"));
-        QObject::connect(fitButton, &QPushButton::clicked, &window, [this] { setFit(); });
-        row->addWidget(fitButton);
-        auto *minus = makeIconButton(Icon::Minus, QStringLiteral("Zoom out"), footer);
-        auto *plus = makeIconButton(Icon::Plus, QStringLiteral("Zoom in"), footer);
-        auto *actual = new QPushButton(QStringLiteral("1:1"), footer);
-        actual->setToolTip(QStringLiteral("Actual size · 1"));
-        QObject::connect(minus, &QToolButton::clicked, &window, [this] { stepZoom(-1); });
-        QObject::connect(plus, &QToolButton::clicked, &window, [this] { stepZoom(1); });
-        QObject::connect(actual, &QPushButton::clicked, &window, [this] { setZoom(1); });
-        zoomLabel = makeLabel({}, "muted", footer);
-        zoomLabel->setAlignment(Qt::AlignCenter);
-        zoomLabel->setMinimumWidth(48);
+        dimensionsSeparator = separator(zoomIsland);
+        row->addWidget(dimensionsSeparator);
+        auto *minus = new Button(Button::Ghost, Icon::Minus, {}, zoomIsland);
+        auto *plus = new Button(Button::Ghost, Icon::Plus, {}, zoomIsland);
+        minus->setToolTip(withKeys(QStringLiteral("Zoom out"), QStringLiteral("−")));
+        plus->setToolTip(withKeys(QStringLiteral("Zoom in"), QStringLiteral("+")));
+        minus->setAccessibleName(QStringLiteral("Zoom out"));
+        plus->setAccessibleName(QStringLiteral("Zoom in"));
+        zoomButton = new Button(Button::Ghost, Icon::None, QStringLiteral("100%"), zoomIsland);
+        zoomButton->setFixedWidth(60);
+        QObject::connect(minus, &QPushButton::clicked, &window, [this] { stepZoom(-1); });
+        QObject::connect(plus, &QPushButton::clicked, &window, [this] { stepZoom(1); });
+        QObject::connect(zoomButton, &QPushButton::clicked, &window, [this] {
+            if (fit && std::abs(zoom - 1) > 0.001) {
+                setZoom(1);
+            } else {
+                setFit();
+            }
+        });
         row->addWidget(minus);
-        row->addWidget(zoomLabel);
+        row->addWidget(zoomButton);
         row->addWidget(plus);
-        row->addWidget(actual);
-        return footer;
+    }
+
+    void layoutStage()
+    {
+        pages->setGeometry(stage->rect());
+        const int width = stage->width();
+        brand->setShowsName(width >= 820);
+        for (Button *button : {regionButton, screenButton, libraryButton}) {
+            button->setCompact(width < 980);
+        }
+        if (toast->isVisible()) {
+            const QSize size = toast->sizeFor(std::min(width - 32, 520));
+            toast->setGeometry((width - size.width()) / 2, 14 - Notice::shadowMargin, size.width(), size.height());
+            toast->raise();
+        }
+    }
+
+    void layoutEditor()
+    {
+        const QRect area = editorPage->rect();
+        workspace->setGeometry(area);
+        constexpr int gap = 16;
+        const int margin = Island::shadowMargin;
+
+        dimensions->setVisible(true);
+        dimensionsSeparator->setVisible(true);
+        zoomIsland->adjustSize();
+        toolIsland->adjustSize();
+        QSize tool = toolIsland->size();
+        QSize zoomSize = zoomIsland->size();
+        const int panelTool = tool.width() - 2 * margin;
+        if (panelTool + 2 * (zoomSize.width() - 2 * margin) + 4 * gap > area.width()) {
+            dimensions->setVisible(false);
+            dimensionsSeparator->setVisible(false);
+            zoomIsland->adjustSize();
+            zoomSize = zoomIsland->size();
+        }
+        const int bottom = area.height() - gap + margin;
+        const int zoomX = area.width() - gap - zoomSize.width() + margin;
+        zoomIsland->move(zoomX, bottom - zoomSize.height());
+        int toolX = (area.width() - tool.width()) / 2;
+        const int limit = zoomX + margin - gap - (tool.width() - margin);
+        toolX = std::max(gap - margin, std::min(toolX, limit));
+        toolIsland->move(toolX, bottom - tool.height());
+        toolIsland->raise();
+        zoomIsland->raise();
+        toolIsland->sync();
     }
 
     void addShortcuts()
@@ -738,6 +929,7 @@ struct EditorWindow::Ui {
         addShortcut(QKeySequence(Qt::Key_0), [this] { setFit(); });
         addShortcut(QKeySequence(Qt::Key_1), [this] { setZoom(1); });
         addShortcut(QKeySequence(Qt::Key_Plus), [this] { stepZoom(1); });
+        addShortcut(QKeySequence(Qt::Key_Equal), [this] { stepZoom(1); });
         addShortcut(QKeySequence(Qt::Key_Minus), [this] { stepZoom(-1); });
     }
 
@@ -747,18 +939,37 @@ struct EditorWindow::Ui {
         QObject::connect(shortcut, &QShortcut::activated, &window, handler);
     }
 
+    void selectTool(Tool tool, bool animated)
+    {
+        canvas->cancelStroke();
+        canvas->tool = tool;
+        QAbstractButton *button = tools->button(static_cast<int>(tool));
+        button->setChecked(true);
+        toolIsland->track(button, animated);
+        refreshControls();
+    }
+
     void refreshControls()
     {
         const bool hasImage = !source.isNull();
-        full->setVisible(hasImage);
-        region->setVisible(hasImage);
-        save->setVisible(hasImage);
-        copy->setVisible(hasImage);
+        for (QWidget *control : {static_cast<QWidget *>(regionButton), static_cast<QWidget *>(screenButton),
+                                 static_cast<QWidget *>(undo), static_cast<QWidget *>(redo), editSeparator,
+                                 static_cast<QWidget *>(copy), static_cast<QWidget *>(save)}) {
+            control->setVisible(hasImage);
+        }
         undo->setEnabled(historyCount > 0);
         redo->setEnabled(historyCount < annotations.size());
         const bool drawsLine = canvas->tool != Tool::Blur && canvas->tool != Tool::Redact;
-        color->setEnabled(drawsLine);
-        thickness->setEnabled(drawsLine);
+        const QString unavailable = canvas->tool == Tool::Blur ? QStringLiteral("Blur has no color or stroke")
+                                                               : QStringLiteral("Redact always uses a solid block");
+        for (Swatch *swatch : swatches) {
+            swatch->setEnabled(drawsLine);
+            swatch->setToolTip(drawsLine ? swatch->accessibleName() : unavailable);
+        }
+        for (StrokeChoice *choice : strokes) {
+            choice->setEnabled(drawsLine);
+            choice->setToolTip(drawsLine ? choice->accessibleName() : unavailable);
+        }
         window.setWindowModified(hasImage && historyCount != cleanCount);
     }
 
@@ -775,9 +986,13 @@ struct EditorWindow::Ui {
         fit = true;
         canvas->cancelStroke();
         pages->setCurrentIndex(source.isNull() ? 0 : 1);
-        dimensions->setText(QStringLiteral("%1 × %2 px").arg(source.width()).arg(source.height()));
+        dimensions->setText(QStringLiteral("%1 × %2").arg(source.width()).arg(source.height()));
         updateImage();
         updateZoom();
+        layoutEditor();
+        if (!source.isNull()) {
+            canvas->setFocus();
+        }
     }
 
     void moveHistory(int step)
@@ -790,7 +1005,7 @@ struct EditorWindow::Ui {
                 canvas->updatePixels(patch.restore(canvas->image));
                 undoBytes -= patch.pixels.sizeInBytes();
                 undoPatches.pop_back();
-                refreshImageControls();
+                refreshControls();
             } else {
                 updateImage();
             }
@@ -823,22 +1038,16 @@ struct EditorWindow::Ui {
                 undoPatches.push_back({historyCount, area.topLeft(), std::move(pixels)});
             }
         }
-        screenframe::applyAnnotation(canvas->image, annotation);
+        applyAnnotation(canvas->image, annotation);
         ++historyCount;
         canvas->updatePixels(area);
-        refreshImageControls();
+        refreshControls();
     }
 
     void updateImage()
     {
-        canvas->image = screenframe::renderAnnotations(source, annotations, historyCount);
+        canvas->image = renderAnnotations(source, annotations, historyCount);
         canvas->update();
-        refreshImageControls();
-    }
-
-    void refreshImageControls()
-    {
-        status->clear();
         refreshControls();
     }
 
@@ -859,7 +1068,7 @@ struct EditorWindow::Ui {
             return;
         }
         fit = false;
-        zoom = std::clamp(value, 0.025, 4.0);
+        zoom = std::clamp(value, 0.025, 8.0);
         updateZoom();
     }
 
@@ -869,10 +1078,12 @@ struct EditorWindow::Ui {
             return;
         }
         const qreal dpr = workspace->devicePixelRatioF();
+        const QMargins &m = stageMargins;
         if (fit) {
-            const QSize available = workspace->maximumViewportSize() - QSize(42, 42);
+            const QSize available = workspace->maximumViewportSize()
+                - QSize(m.left() + m.right(), m.top() + m.bottom());
             zoom = std::min({1.0, qreal(std::max(1, available.width())) * dpr / source.width(),
-                            qreal(std::max(1, available.height())) * dpr / source.height()});
+                             qreal(std::max(1, available.height())) * dpr / source.height()});
         }
         const QSize size(std::max(1, qRound(source.width() * zoom / dpr)),
                          std::max(1, qRound(source.height() * zoom / dpr)));
@@ -880,12 +1091,16 @@ struct EditorWindow::Ui {
         const QPoint oldCenter = canvas->mapFrom(workspace->viewport(), viewCenter);
         const QPointF relative(qreal(oldCenter.x()) / std::max(1, canvas->width()),
                                qreal(oldCenter.y()) / std::max(1, canvas->height()));
-        canvas->setFixedSize(size);
+        holder->setFixedSize(size + QSize(m.left() + m.right(), m.top() + m.bottom()));
+        canvas->setGeometry(QRect(QPoint(m.left(), m.top()), size));
         if (!fit) {
-            workspace->horizontalScrollBar()->setValue(qRound(relative.x() * size.width()) - viewCenter.x());
-            workspace->verticalScrollBar()->setValue(qRound(relative.y() * size.height()) - viewCenter.y());
+            workspace->horizontalScrollBar()->setValue(qRound(m.left() + relative.x() * size.width()) - viewCenter.x());
+            workspace->verticalScrollBar()->setValue(qRound(m.top() + relative.y() * size.height()) - viewCenter.y());
         }
-        zoomLabel->setText(QStringLiteral("%1%").arg(qRound(zoom * 100)));
+        workspace->viewport()->update();
+        zoomButton->setText(QStringLiteral("%1%").arg(qRound(zoom * 100)));
+        zoomButton->setToolTip(fit ? QStringLiteral("Fitted to the window. Click for actual size  ·  1")
+                                   : QStringLiteral("Click to fit the window  ·  0"));
     }
 
     void copyImage()
@@ -896,34 +1111,17 @@ struct EditorWindow::Ui {
         QApplication::clipboard()->setImage(canvas->image);
         cleanCount = historyCount;
         refreshControls();
-        status->setText(QStringLiteral("Copied to clipboard"));
+        toast->flash(QStringLiteral("Copied to clipboard"));
     }
 
     void saveImage()
     {
-        if (canvas->image.isNull()) {
-            return;
-        }
-        QDir directory(QStandardPaths::writableLocation(QStandardPaths::PicturesLocation));
-        if (!directory.exists()) {
-            directory = QDir::home();
-        }
-        const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd_HH-mm-ss"));
-        QFileDialog dialog(&window, QStringLiteral("Save screenshot"), directory.absolutePath(), QStringLiteral("PNG (*.png)"));
-        dialog.setAcceptMode(QFileDialog::AcceptSave);
-        dialog.setDefaultSuffix(QStringLiteral("png"));
-        dialog.selectFile(QStringLiteral("Screenshot_%1.png").arg(timestamp));
-        if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
-            return;
-        }
-        QString error;
-        if (!savePng(canvas->image, dialog.selectedFiles().constFirst(), &error)) {
-            QMessageBox::warning(&window, QStringLiteral("Could not save screenshot"), error);
+        if (canvas->image.isNull() || !saveImageAs(&window, canvas->image, QDateTime::currentDateTime())) {
             return;
         }
         cleanCount = historyCount;
         refreshControls();
-        status->setText(QStringLiteral("Screenshot saved"));
+        toast->flash(QStringLiteral("Screenshot saved"));
     }
 };
 
@@ -948,6 +1146,7 @@ void EditorWindow::showEvent(QShowEvent *event)
                                                         [this] { ui->updateZoom(); });
     }
     ui->updateZoom();
+    ui->layoutEditor();
 }
 
 void EditorWindow::setCapture(const QImage &image)
@@ -962,20 +1161,17 @@ QImage EditorWindow::currentImage() const
 
 void EditorWindow::setShortcuts(const QString &full, const QString &region, const QString &warning)
 {
-    ui->fullKey->setText(full);
-    ui->regionKey->setText(region);
-    ui->fullKey->setVisible(!full.isEmpty());
-    ui->regionKey->setVisible(!region.isEmpty());
-    ui->full->setToolTip(full);
-    ui->region->setToolTip(region);
-    ui->warning->setText(warning);
-    ui->warning->setVisible(!warning.isEmpty());
+    ui->heroRegion->setHint(region);
+    ui->heroScreen->setHint(full);
+    ui->regionButton->setToolTip(withKeys(QStringLiteral("Capture a region"), region));
+    ui->screenButton->setToolTip(withKeys(QStringLiteral("Capture the screen"), full));
+    ui->shortcutTip->setVisible(!full.isEmpty() || !region.isEmpty());
+    ui->shortcutBanner->setMessage(warning);
 }
 
 void EditorWindow::setLibraryStatus(const QString &message)
 {
-    ui->libraryStatus->setText(message);
-    ui->libraryStatus->setVisible(!message.isEmpty());
+    ui->libraryBanner->setMessage(message);
 }
 
 bool EditorWindow::hasUnsavedChanges() const
@@ -988,11 +1184,12 @@ bool EditorWindow::confirmReplace()
     if (!hasUnsavedChanges()) {
         return true;
     }
-    QMessageBox dialog(QMessageBox::Question, QStringLiteral("Unsaved changes"),
-                       QStringLiteral("The current screenshot has unsaved changes."), QMessageBox::NoButton, this);
-    auto *replace = dialog.addButton(QStringLiteral("Continue"), QMessageBox::AcceptRole);
-    auto *cancel = dialog.addButton(QStringLiteral("Cancel"), QMessageBox::RejectRole);
-    dialog.setDefaultButton(cancel);
+    QMessageBox dialog(QMessageBox::Warning, QStringLiteral("Discard edits?"), QStringLiteral("Discard your edits?"),
+                       QMessageBox::NoButton, this);
+    dialog.setInformativeText(QStringLiteral("The markup on this screenshot hasn’t been copied or saved."));
+    auto *discard = dialog.addButton(QStringLiteral("Discard"), QMessageBox::DestructiveRole);
+    auto *keep = dialog.addButton(QStringLiteral("Keep Editing"), QMessageBox::RejectRole);
+    dialog.setDefaultButton(keep);
     dialog.exec();
-    return dialog.clickedButton() == replace;
+    return dialog.clickedButton() == discard;
 }

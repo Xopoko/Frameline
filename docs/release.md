@@ -8,7 +8,7 @@ Build and test the release candidate from a clean checkout. The repository's **B
 | DMG | macOS 14.4+, Apple Silicon and Intel | The preview is ad hoc signed. Validate a quarantined download before public distribution. |
 | DEB | Ubuntu 24.04, amd64 | Uses system Qt packages. Capture works in X11 or through a compatible Wayland portal. |
 
-Test first launch with an empty profile and no library server. Verify capture, region selection, save, copy, and keyboard navigation. Then connect to a disposable library over SSH and verify both browsing and automatic upload. Confirm that old settings and queued files continue to work after an upgrade and that switching libraries never transfers queued files to the new server.
+Test first launch with an empty profile and no library server. Verify capture, region selection, save, copy, and keyboard navigation. Then connect to a disposable library over SSH and verify both browsing and automatic upload. Confirm that settings and queued files survive an upgrade and that switching libraries never transfers queued files to the new server.
 
 ## Windows and macOS dependencies
 
@@ -24,4 +24,4 @@ The DEB uses the Qt libraries from Ubuntu 24.04. Install Ubuntu's security updat
 
 ## Before making a release public
 
-Confirm the repository and license with the maintainer, and review Git history, package contents, and screenshots for private information. Check the downloaded ZIP, DMG, and DEB on the target architectures and publish only the verified files and their checksums. Enable private vulnerability reporting before directing users to it. See [Security](../SECURITY.md).
+Review Git history, package contents, and screenshots for private information. Check the downloaded ZIP, DMG, and DEB on the target architectures and publish only the verified files and their checksums. Enable private vulnerability reporting before directing users to it. See [Security](../SECURITY.md).

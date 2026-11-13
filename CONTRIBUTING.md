@@ -1,7 +1,7 @@
-# Contributing to ScreenFrame
+# Contributing
 
-Use the build commands in the [README](README.md). Build with `BUILD_TESTING=ON`, run CTest, and run the Python server tests for any library change.
+Build and test as described in the [README](README.md#building). Run the server tests too if you touch the library.
 
-For capture or keyboard changes, include the operating system, display server on Linux, and whether you tested a physical desktop. For interface changes, use sample images in screenshots. Omit private desktops, configuration files, tokens, and logs containing personal paths.
+When changing capture or shortcuts, say which OS you tested on, and for Linux whether it was X11 or Wayland. Screenshots in issues and pull requests should use sample content, not your own desktop, settings, tokens or logs with personal paths.
 
-Changes should preserve normal capture with the shared library disabled. When touching uploads, test an unavailable server, a retry after restart, and a configuration change with a pending capture. Keep platform-specific calls in the platform backend. See the [architecture notes](docs/architecture.md).
+Capture must keep working with no library configured. For upload changes, also try an unreachable server, a restart with captures still queued, and a destination change while a capture is queued. Platform-specific calls belong in `src/platform` or behind `Q_OS_…` checks; see [architecture](docs/architecture.md).

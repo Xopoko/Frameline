@@ -19,11 +19,25 @@
 #include <dwmapi.h>
 #endif
 
-ScreenFrameApplication::ScreenFrameApplication(LaunchOptions options)
-    : m_options(std::move(options))
+namespace {
+
+// Time for the compositor to remove ScreenFrame's own windows from the screen before capturing.
+constexpr int compositorDelayMs = 180;
+
+void bringToFront(QWidget &window)
 {
-    m_settings = loadSettings(defaultSettingsDirectory(), &m_settingsError);
-    m_libraryClient = std::make_unique<LibraryClient>(m_settings.library);
+    window.showNormal();
+    window.raise();
+    window.activateWindow();
+}
+
+} // namespace
+
+ScreenFrameApplication::ScreenFrameApplication(LaunchOptions options)
+    : options_(std::move(options))
+{
+    settings_ = loadSettings(defaultSettingsDirectory(), &settingsError_);
+    libraryClient_ = std::make_unique<LibraryClient>(settings_.library);
     connectLibraryClient();
     connect(qApp, &QApplication::aboutToQuit, this, [this] {
         archivePreview();
@@ -31,24 +45,24 @@ ScreenFrameApplication::ScreenFrameApplication(LaunchOptions options)
     });
     connect(qApp, &QApplication::lastWindowClosed, this, [this] {
         QTimer::singleShot(0, this, [this] {
-            if (!m_tray.isVisible() && !m_busy && !m_settingsWindow
-                && (!m_editor || !m_editor->isVisible()) && (!m_library || !m_library->isVisible())
-                && (isDesktop() || m_previewOpened))
+            if (!tray_.isVisible() && !busy_ && !settingsWindow_
+                && (!editor_ || !editor_->isVisible()) && (!library_ || !library_->isVisible())
+                && (isDesktop() || previewOpened_))
                 exitAfterLibrarySync();
         });
     });
-    connect(&m_shortcuts, &GlobalShortcuts::captureRequested, this, [this](bool region) { beginCapture(region); });
-    connect(&m_shortcuts, &GlobalShortcuts::statusChanged, this, &ScreenFrameApplication::refreshShortcuts);
-    connect(&m_capture, &ScreenCapture::failed, this, &ScreenFrameApplication::failCapture);
-    connect(&m_capture, &ScreenCapture::portalPermissionRequired, this, &ScreenFrameApplication::requestPortalPermission);
-    connect(&m_capture, &ScreenCapture::cancelled, this, [this] { finishCapture({}); });
-    connect(&m_capture, &ScreenCapture::captured, this, [this](const QList<CaptureFrame> &frames) {
-        if (std::exchange(m_portalAuthorizing, false)) {
-            m_editor->hide();
+    connect(&shortcuts_, &GlobalShortcuts::captureRequested, this, [this](bool region) { beginCapture(region); });
+    connect(&shortcuts_, &GlobalShortcuts::statusChanged, this, &ScreenFrameApplication::refreshShortcuts);
+    connect(&capture_, &ScreenCapture::failed, this, &ScreenFrameApplication::failCapture);
+    connect(&capture_, &ScreenCapture::portalPermissionRequired, this, &ScreenFrameApplication::requestPortalPermission);
+    connect(&capture_, &ScreenCapture::cancelled, this, [this] { finishCapture({}); });
+    connect(&capture_, &ScreenCapture::captured, this, [this](const QList<CaptureFrame> &frames) {
+        if (std::exchange(portalAuthorizing_, false)) {
+            editor_->hide();
             captureAfterHiding(true);
             return;
         }
-        if (!m_region || frames.isEmpty()) {
+        if (!region_ || frames.isEmpty()) {
             finishCapture(frames.isEmpty() ? QImage{} : frames.first().image);
             return;
         }
@@ -56,16 +70,16 @@ ScreenFrameApplication::ScreenFrameApplication(LaunchOptions options)
     });
 }
 
+ScreenFrameApplication::~ScreenFrameApplication() = default;
+
 void ScreenFrameApplication::connectLibraryClient()
 {
-    connect(m_libraryClient.get(), &LibraryClient::syncStatusChanged, this, &ScreenFrameApplication::refreshLibraryStatus);
+    connect(libraryClient_.get(), &LibraryClient::syncStatusChanged, this, &ScreenFrameApplication::refreshLibraryStatus);
 }
-
-ScreenFrameApplication::~ScreenFrameApplication() = default;
 
 bool ScreenFrameApplication::isDesktop() const
 {
-    return m_options.mode == LaunchOptions::Mode::Desktop || m_options.mode == LaunchOptions::Mode::Library;
+    return options_.mode == LaunchOptions::Mode::Desktop || options_.mode == LaunchOptions::Mode::Library;
 }
 
 void ScreenFrameApplication::start()
@@ -73,117 +87,112 @@ void ScreenFrameApplication::start()
     // The capture overlay can briefly be the last visible window. Closing the final editor
     // should also give the local Library queue time to finish writing.
     QApplication::setQuitOnLastWindowClosed(false);
-    m_libraryClient->start();
-    if (!m_settingsError.isEmpty()) {
+    libraryClient_->start();
+    if (!settingsError_.isEmpty()) {
         if (isDesktop())
-            refreshLibraryStatus(0, m_settingsError);
+            refreshLibraryStatus(0, settingsError_);
         else
-            QTextStream(stderr) << m_settingsError << Qt::endl;
+            QTextStream(stderr) << settingsError_ << Qt::endl;
     }
     if (!isDesktop()) {
-        QTimer::singleShot(0, this, [this] { beginCapture(m_options.mode == LaunchOptions::Mode::Region); });
+        QTimer::singleShot(0, this, [this] { beginCapture(options_.mode == LaunchOptions::Mode::Region); });
         return;
     }
 
     if (QSystemTrayIcon::isSystemTrayAvailable()) {
-        m_tray.setIcon(QApplication::windowIcon());
-        m_tray.setToolTip(m_libraryMessage.isEmpty() ? QStringLiteral("ScreenFrame") : m_libraryMessage);
-        m_trayMenu = std::make_unique<QMenu>();
-        m_trayMenu->addAction(QStringLiteral("Open ScreenFrame"), this, &ScreenFrameApplication::showEditor);
-        m_trayMenu->addAction(QStringLiteral("Library"), this, &ScreenFrameApplication::showLibrary);
-        m_trayMenu->addAction(QStringLiteral("Settings"), this, &ScreenFrameApplication::showSettings);
-        m_trayMenu->addSeparator();
-        m_trayMenu->addAction(QStringLiteral("Capture Screen"), this, [this] { beginCapture(false, true); });
-        m_trayMenu->addAction(QStringLiteral("Capture Region"), this, [this] { beginCapture(true, true); });
-        m_trayMenu->addSeparator();
-        m_trayMenu->addAction(QStringLiteral("Quit"), this, &ScreenFrameApplication::quitDesktop);
-        m_tray.setContextMenu(m_trayMenu.get());
-        connect(&m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
+        tray_.setIcon(QApplication::windowIcon());
+        tray_.setToolTip(libraryMessage_.isEmpty() ? QStringLiteral("ScreenFrame") : libraryMessage_);
+        trayMenu_ = std::make_unique<QMenu>();
+        // Capturing is what the tray is for, so it comes first.
+        trayMenu_->addAction(QStringLiteral("Capture Region"), this, [this] { beginCapture(true, true); });
+        trayMenu_->addAction(QStringLiteral("Capture Screen"), this, [this] { beginCapture(false, true); });
+        trayMenu_->addSeparator();
+        trayMenu_->addAction(QStringLiteral("Open ScreenFrame"), this, &ScreenFrameApplication::showEditor);
+        trayMenu_->addAction(QStringLiteral("Library"), this, &ScreenFrameApplication::showLibrary);
+        trayMenu_->addAction(QStringLiteral("Settings…"), this, &ScreenFrameApplication::showSettings);
+        trayMenu_->addSeparator();
+        trayMenu_->addAction(QStringLiteral("Quit ScreenFrame"), this, &ScreenFrameApplication::quitDesktop);
+        tray_.setContextMenu(trayMenu_.get());
+        connect(&tray_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
             if (reason == QSystemTrayIcon::Trigger) {
                 showEditor();
             }
         });
-        m_tray.show();
+        tray_.show();
     }
 
-    m_shortcuts.start(m_settings.useSystemRegionShortcut ? RegionShortcutPreset::System : RegionShortcutPreset::Standard);
-    if (m_options.mode == LaunchOptions::Mode::Library) {
+    shortcuts_.start(settings_.useSystemRegionShortcut ? RegionShortcutPreset::System : RegionShortcutPreset::Standard);
+    if (options_.mode == LaunchOptions::Mode::Library) {
         showLibrary();
-    } else if (!m_options.trayOnly || !m_tray.isVisible()) {
+    } else if (!options_.trayOnly || !tray_.isVisible()) {
         showEditor();
     }
 }
 
 EditorWindow &ScreenFrameApplication::editor()
 {
-    if (!m_editor) {
-        m_editor = std::make_unique<EditorWindow>();
-        m_editor->setShortcuts(m_fullShortcut, m_regionShortcut, m_shortcutMessage);
-        m_editor->setLibraryStatus(m_libraryMessage);
-        connect(m_editor.get(), &EditorWindow::fullCaptureRequested, this, [this] { beginCapture(false); });
-        connect(m_editor.get(), &EditorWindow::regionCaptureRequested, this, [this] { beginCapture(true); });
-        connect(m_editor.get(), &EditorWindow::libraryRequested, this, &ScreenFrameApplication::showLibrary);
-        connect(m_editor.get(), &EditorWindow::settingsRequested, this, &ScreenFrameApplication::showSettings);
-        connect(m_editor.get(), &EditorWindow::closeAccepted, this, &ScreenFrameApplication::archivePreview);
+    if (!editor_) {
+        editor_ = std::make_unique<EditorWindow>();
+        editor_->setShortcuts(fullShortcut_, regionShortcut_, shortcutMessage_);
+        editor_->setLibraryStatus(libraryMessage_);
+        connect(editor_.get(), &EditorWindow::fullCaptureRequested, this, [this] { beginCapture(false); });
+        connect(editor_.get(), &EditorWindow::regionCaptureRequested, this, [this] { beginCapture(true); });
+        connect(editor_.get(), &EditorWindow::libraryRequested, this, &ScreenFrameApplication::showLibrary);
+        connect(editor_.get(), &EditorWindow::settingsRequested, this, &ScreenFrameApplication::showSettings);
+        connect(editor_.get(), &EditorWindow::closeAccepted, this, &ScreenFrameApplication::archivePreview);
     }
-    return *m_editor;
+    return *editor_;
 }
 
 void ScreenFrameApplication::showEditor()
 {
-    if (m_busy || m_quitting) {
+    if (busy_ || quitting_) {
         return;
     }
-    auto &window = editor();
-    window.showNormal();
-    window.raise();
-    window.activateWindow();
+    bringToFront(editor());
 }
 
 void ScreenFrameApplication::showLibrary()
 {
-    if (m_busy || m_quitting) {
+    if (busy_ || quitting_) {
         return;
     }
-    if (!m_library) {
-        m_library = std::make_unique<LibraryWindow>(*m_libraryClient);
-        connect(m_library.get(), &LibraryWindow::settingsRequested, this, &ScreenFrameApplication::showSettings,
+    if (!library_) {
+        library_ = std::make_unique<LibraryWindow>(*libraryClient_);
+        connect(library_.get(), &LibraryWindow::settingsRequested, this, &ScreenFrameApplication::showSettings,
                 Qt::QueuedConnection);
     }
-    m_library->showNormal();
-    m_library->raise();
-    m_library->activateWindow();
+    bringToFront(*library_);
 }
 
 void ScreenFrameApplication::showSettings()
 {
-    if (m_busy || m_quitting || m_settingsWindow)
+    if (busy_ || quitting_ || settingsWindow_)
         return;
 
     QString settingsError;
     const AppSettings saved = loadSettings(defaultSettingsDirectory(), &settingsError);
-    QWidget *parent = m_library && m_library->isVisible() ? static_cast<QWidget *>(m_library.get()) : m_editor.get();
-    m_settingsWindow = std::make_unique<SettingsWindow>(saved, parent);
-    connect(m_settingsWindow.get(), &SettingsWindow::testRequested, this, [this](const LibrarySettings &settings) {
-        m_testClient = std::make_unique<LibraryClient>(settings);
-        m_testClient->list({}, m_settingsWindow.get(), [this](QList<LibraryItem>, const QString &, const QString &error) {
-            m_settingsWindow->setTestResult(error.isEmpty() ? QStringLiteral("Connected to the shared library.") : error,
-                                            error.isEmpty());
+    QWidget *parent = library_ && library_->isVisible() ? static_cast<QWidget *>(library_.get()) : editor_.get();
+    settingsWindow_ = std::make_unique<SettingsWindow>(saved, parent);
+    connect(settingsWindow_.get(), &SettingsWindow::testRequested, this, [this](const LibrarySettings &settings) {
+        testClient_ = std::make_unique<LibraryClient>(settings);
+        testClient_->list({}, settingsWindow_.get(), [this](QList<LibraryItem>, const QString &, const QString &error) {
+            settingsWindow_->setTestResult(error);
         });
     });
     if (!settingsError.isEmpty()) {
         QMessageBox::warning(parent, QStringLiteral("ScreenFrame settings"),
                              settingsError + QStringLiteral("\n\nSave new settings to replace the unreadable configuration."));
     }
-    const bool accepted = m_settingsWindow->exec() == QDialog::Accepted;
-    const AppSettings updated = m_settingsWindow->settings();
-    m_settingsWindow.reset();
-    m_testClient.reset();
+    const bool accepted = settingsWindow_->exec() == QDialog::Accepted;
+    const AppSettings updated = settingsWindow_->settings();
+    settingsWindow_.reset();
+    testClient_.reset();
     if (!accepted)
         return;
 
-    const bool libraryChanged = updated.library != m_settings.library;
-    const bool destinationChanged = updated.library.storageKey() != m_settings.library.storageKey();
+    const bool libraryChanged = updated.library != settings_.library;
+    const bool destinationChanged = updated.library.storageKey() != settings_.library.storageKey();
     if (libraryChanged && !flushLibrary()) {
         QMessageBox::warning(parent, QStringLiteral("Settings could not be changed"),
                              QStringLiteral("ScreenFrame could not save its pending screenshots locally. Try again after the queue error clears."));
@@ -195,21 +204,21 @@ void ScreenFrameApplication::showSettings()
         return;
     }
 
-    const bool shortcutChanged = updated.useSystemRegionShortcut != m_settings.useSystemRegionShortcut;
-    const bool libraryWasVisible = m_library && m_library->isVisible();
-    const bool keepPreviewLocal = m_previewCapture.capturedAt.isValid()
-        && (destinationChanged || updated.library.autoArchive != m_settings.library.autoArchive);
+    const bool shortcutChanged = updated.useSystemRegionShortcut != settings_.useSystemRegionShortcut;
+    const bool libraryWasVisible = library_ && library_->isVisible();
+    const bool keepPreviewLocal = previewCapture_.capturedAt.isValid()
+        && (destinationChanged || updated.library.autoArchive != settings_.library.autoArchive);
     if (keepPreviewLocal)
-        m_previewCapture = {};
-    m_settings = updated;
-    const bool hadSettingsError = !m_settingsError.isEmpty();
-    m_settingsError.clear();
+        previewCapture_ = {};
+    settings_ = updated;
+    const bool hadSettingsError = !settingsError_.isEmpty();
+    settingsError_.clear();
     if (libraryChanged) {
-        m_library.reset();
-        m_libraryClient = std::make_unique<LibraryClient>(m_settings.library);
+        library_.reset();
+        libraryClient_ = std::make_unique<LibraryClient>(settings_.library);
         connectLibraryClient();
         refreshLibraryStatus(0, {});
-        m_libraryClient->start();
+        libraryClient_->start();
         if (libraryWasVisible)
             showLibrary();
     } else if (hadSettingsError) {
@@ -224,23 +233,23 @@ void ScreenFrameApplication::showSettings()
                 message += QStringLiteral("\n\n");
             message += QStringLiteral("The screenshot already open will stay local. Use Save PNG to keep a copy.");
         }
-        QWidget *messageParent = libraryWasVisible ? static_cast<QWidget *>(m_library.get()) : m_editor.get();
+        QWidget *messageParent = libraryWasVisible ? static_cast<QWidget *>(library_.get()) : editor_.get();
         QMessageBox::information(messageParent, QStringLiteral("Settings saved"), message);
     }
 }
 
 void ScreenFrameApplication::quitDesktop()
 {
-    if (m_quitting || m_settingsWindow) {
+    if (quitting_ || settingsWindow_) {
         return;
     }
-    if (m_busy) {
-        m_exitAfterCapture = true;
+    if (busy_) {
+        exitAfterCapture_ = true;
         return;
     }
-    if (m_editor && m_editor->hasUnsavedChanges()) {
+    if (editor_ && editor_->hasUnsavedChanges()) {
         showEditor();
-        if (!m_editor->confirmReplace()) {
+        if (!editor_->confirmReplace()) {
             return;
         }
     }
@@ -250,51 +259,48 @@ void ScreenFrameApplication::quitDesktop()
 
 void ScreenFrameApplication::beginCapture(bool region, bool fromTrayMenu)
 {
-    if (m_busy || m_quitting || m_settingsWindow) {
+    if (busy_ || quitting_ || settingsWindow_) {
         return;
     }
 
-    m_busy = true;
-    m_region = region;
-    m_portalAuthorizationAttempted = false;
-    m_restoreEditor = m_editor && m_editor->isVisible();
-    m_restoreLibrary = m_library && m_library->isVisible() && !m_library->isMinimized();
-    if (m_editor && m_editor->hasUnsavedChanges()) {
-        m_editor->showNormal();
-        m_editor->raise();
-        m_editor->activateWindow();
-        if (!m_editor->confirmReplace()) {
-            m_busy = false;
-            if (std::exchange(m_exitAfterCapture, false)) {
+    busy_ = true;
+    region_ = region;
+    portalAuthorizationAttempted_ = false;
+    restoreEditor_ = editor_ && editor_->isVisible();
+    restoreLibrary_ = library_ && library_->isVisible() && !library_->isMinimized();
+    if (editor_ && editor_->hasUnsavedChanges()) {
+        bringToFront(*editor_);
+        if (!editor_->confirmReplace()) {
+            busy_ = false;
+            if (std::exchange(exitAfterCapture_, false)) {
                 quitDesktop();
             }
             return;
         }
     }
 
-    const bool surfaceWasVisible = fromTrayMenu || (m_trayMenu && m_trayMenu->isVisible())
-        || m_restoreLibrary || (m_editor && m_editor->isVisible() && !m_editor->isMinimized());
-    if (m_editor) {
-        m_editor->hide();
+    const bool surfaceWasVisible = fromTrayMenu || (trayMenu_ && trayMenu_->isVisible())
+        || restoreLibrary_ || (editor_ && editor_->isVisible() && !editor_->isMinimized());
+    if (editor_) {
+        editor_->hide();
     }
-    if (m_trayMenu) {
-        m_trayMenu->hide();
+    if (trayMenu_) {
+        trayMenu_->hide();
     }
-    if (m_library) {
-        m_library->hide();
+    if (library_) {
+        library_->hide();
     }
     captureAfterHiding(surfaceWasVisible);
 }
 
 void ScreenFrameApplication::captureAfterHiding(bool surfaceWasVisible)
 {
-    const auto capture = [this] { m_capture.capture(m_region); };
+    const auto capture = [this] { capture_.capture(region_); };
 #ifdef Q_OS_MACOS
     // ScreenCaptureKit filters out ScreenFrame even while its windows are being hidden.
     Q_UNUSED(surfaceWasVisible);
     QTimer::singleShot(0, this, capture);
 #else
-    constexpr int compositorDelayMs = 180;
     if (!surfaceWasVisible) {
         QTimer::singleShot(0, this, capture);
         return;
@@ -315,11 +321,11 @@ void ScreenFrameApplication::captureAfterHiding(bool surfaceWasVisible)
 
 void ScreenFrameApplication::finishCapture(QImage image)
 {
-    m_busy = false;
-    m_portalAuthorizing = false;
-    const bool shouldQuit = std::exchange(m_exitAfterCapture, false);
+    busy_ = false;
+    portalAuthorizing_ = false;
+    const bool shouldQuit = std::exchange(exitAfterCapture_, false);
     if (image.isNull()) {
-        if (isDesktop() || m_previewOpened) {
+        if (isDesktop() || previewOpened_) {
             restoreWindows();
         } else {
             QApplication::exit(2);
@@ -330,36 +336,36 @@ void ScreenFrameApplication::finishCapture(QImage image)
         return;
     }
 
-    const QString kind = m_region ? QStringLiteral("region") : QStringLiteral("full");
+    const QString kind = region_ ? QStringLiteral("region") : QStringLiteral("full");
     const QDateTime capturedAt = QDateTime::currentDateTimeUtc();
     QString outputError;
-    if (!m_options.output.isEmpty()) {
+    if (!options_.output.isEmpty()) {
         QString error;
-        if (!savePng(image, m_options.output, &error)) {
-            outputError = QStringLiteral("Could not save the PNG to %1. %2").arg(m_options.output, error);
+        if (!savePng(image, options_.output, &error)) {
+            outputError = QStringLiteral("Could not save the PNG to %1. %2").arg(options_.output, error);
             QTextStream(stderr) << outputError << Qt::endl;
-            m_exitCode = 1;
+            exitCode_ = 1;
         }
-        m_options.output.clear();
+        options_.output.clear();
     }
 
-    if (!m_options.preview) {
-        m_libraryClient->enqueue(std::move(image), kind, capturedAt);
+    if (!options_.preview) {
+        libraryClient_->enqueue(std::move(image), kind, capturedAt);
         exitAfterLibrarySync();
         return;
     }
 
-    m_restoreEditor = false;
-    m_restoreLibrary = false;
+    restoreEditor_ = false;
+    restoreLibrary_ = false;
     archivePreview();
     image.setDevicePixelRatio(1);
     editor().setCapture(image);
-    m_previewCapture = {kind, capturedAt};
+    previewCapture_ = {kind, capturedAt};
     showEditor();
-    m_previewOpened = true;
+    previewOpened_ = true;
     if (!outputError.isEmpty()) {
         QMessageBox dialog(QMessageBox::Warning, QStringLiteral("Could not save screenshot"), outputError,
-                           QMessageBox::Ok, m_editor.get());
+                           QMessageBox::Ok, editor_.get());
         dialog.setTextFormat(Qt::PlainText);
         dialog.exec();
     }
@@ -370,22 +376,22 @@ void ScreenFrameApplication::finishCapture(QImage image)
 
 void ScreenFrameApplication::failCapture(const QString &message)
 {
-    m_busy = false;
-    m_portalAuthorizing = false;
-    const bool shouldQuit = std::exchange(m_exitAfterCapture, false);
-    if (!isDesktop() && !m_previewOpened) {
+    busy_ = false;
+    portalAuthorizing_ = false;
+    const bool shouldQuit = std::exchange(exitAfterCapture_, false);
+    if (!isDesktop() && !previewOpened_) {
         QTextStream(stderr) << message << Qt::endl;
-        if (m_options.preview) {
+        if (options_.preview) {
             QMessageBox::warning(nullptr, QStringLiteral("ScreenFrame"), message);
         }
-        m_exitCode = 1;
+        exitCode_ = 1;
         exitAfterLibrarySync();
         return;
     }
 
     restoreWindows();
     showEditor();
-    QMessageBox::warning(m_editor.get(), QStringLiteral("Capture Failed"), message);
+    QMessageBox::warning(editor_.get(), QStringLiteral("Capture Failed"), message);
     if (shouldQuit) {
         quitDesktop();
     }
@@ -393,15 +399,13 @@ void ScreenFrameApplication::failCapture(const QString &message)
 
 void ScreenFrameApplication::requestPortalPermission(const QString &message)
 {
-    if (!m_options.preview || std::exchange(m_portalAuthorizationAttempted, true)) {
+    if (!options_.preview || std::exchange(portalAuthorizationAttempted_, true)) {
         failCapture(message);
         return;
     }
 
     auto &window = editor();
-    window.showNormal();
-    window.raise();
-    window.activateWindow();
+    bringToFront(window);
     QMessageBox dialog(QMessageBox::Question, QStringLiteral("Screen Capture Permission"), message,
                        QMessageBox::NoButton, &window);
     dialog.setInformativeText(QStringLiteral("ScreenFrame will request access with this window open. "
@@ -415,67 +419,67 @@ void ScreenFrameApplication::requestPortalPermission(const QString &message)
         return;
     }
 
-    m_portalAuthorizing = true;
-    QTimer::singleShot(180, this, [this] { m_capture.capture(m_region, m_editor.get()); });
+    portalAuthorizing_ = true;
+    QTimer::singleShot(compositorDelayMs, this, [this] { capture_.capture(region_, editor_.get()); });
 }
 
 void ScreenFrameApplication::restoreWindows()
 {
-    if (std::exchange(m_restoreEditor, false)) {
+    if (std::exchange(restoreEditor_, false)) {
         showEditor();
     }
-    if (std::exchange(m_restoreLibrary, false)) {
+    if (std::exchange(restoreLibrary_, false)) {
         showLibrary();
     }
 }
 
 void ScreenFrameApplication::archivePreview()
 {
-    if (!m_previewCapture.capturedAt.isValid()) {
+    if (!previewCapture_.capturedAt.isValid()) {
         return;
     }
-    const auto capture = std::exchange(m_previewCapture, {});
-    if (m_editor) {
-        m_libraryClient->enqueue(m_editor->currentImage(), capture.kind, capture.capturedAt);
+    const auto capture = std::exchange(previewCapture_, {});
+    if (editor_) {
+        libraryClient_->enqueue(editor_->currentImage(), capture.kind, capture.capturedAt);
     }
 }
 
 bool ScreenFrameApplication::flushLibrary()
 {
-    if (m_libraryClient->flushPendingWrites()) {
-        m_libraryFlushFailed = false;
+    if (libraryClient_->flushPendingWrites()) {
+        libraryFlushFailed_ = false;
         return true;
     }
     const QString error = QStringLiteral("Could not save a screenshot to the local Library queue.");
-    if (!isDesktop() && !m_libraryFlushFailed) {
+    if (!isDesktop() && !libraryFlushFailed_) {
         QTextStream(stderr) << error << Qt::endl;
     }
-    m_libraryFlushFailed = true;
-    refreshLibraryStatus(m_libraryClient->pendingCount(), error);
+    libraryFlushFailed_ = true;
+    refreshLibraryStatus(libraryClient_->pendingCount(), error);
     return false;
 }
 
 void ScreenFrameApplication::exitAfterLibrarySync()
 {
-    if (m_quitting) {
+    if (quitting_) {
         return;
     }
     if (!flushLibrary()) {
-        if (isDesktop() || m_previewOpened) {
+        if (isDesktop() || previewOpened_) {
             showEditor();
             return;
         }
-        m_exitCode = 1;
+        exitCode_ = 1;
     }
-    m_quitting = true;
+    quitting_ = true;
 
-    const auto exit = [this] { QApplication::exit(m_exitCode); };
-    if (m_libraryClient->pendingCount() == 0) {
+    const auto exit = [this] { QApplication::exit(exitCode_); };
+    if (libraryClient_->pendingCount() == 0) {
         QTimer::singleShot(0, this, exit);
         return;
     }
 
-    connect(m_libraryClient.get(), &LibraryClient::syncStatusChanged, this,
+    connect(libraryClient_.get(), &LibraryClient::syncStatusChanged, this,
             [exit](int pending, const QString &) {
                 if (pending == 0) {
                     exit();
@@ -488,24 +492,24 @@ void ScreenFrameApplication::exitAfterLibrarySync()
 void ScreenFrameApplication::refreshLibraryStatus(int pending, const QString &error)
 {
     if (error.isEmpty()) {
-        m_libraryMessage.clear();
+        libraryMessage_.clear();
     } else if (pending > 0) {
-        m_libraryMessage = QStringLiteral("Library (%1 pending): %2").arg(pending).arg(error);
+        libraryMessage_ = QStringLiteral("Library (%1 pending): %2").arg(pending).arg(error);
     } else {
-        m_libraryMessage = QStringLiteral("Library: %1").arg(error);
+        libraryMessage_ = QStringLiteral("Library: %1").arg(error);
     }
-    m_tray.setToolTip(m_libraryMessage.isEmpty() ? QStringLiteral("ScreenFrame") : m_libraryMessage);
-    if (m_editor) {
-        m_editor->setLibraryStatus(m_libraryMessage);
+    tray_.setToolTip(libraryMessage_.isEmpty() ? QStringLiteral("ScreenFrame") : libraryMessage_);
+    if (editor_) {
+        editor_->setLibraryStatus(libraryMessage_);
     }
 }
 
 void ScreenFrameApplication::refreshShortcuts(bool full, bool region, const QString &message)
 {
-    m_fullShortcut = full ? m_shortcuts.description(false) : QString{};
-    m_regionShortcut = region ? m_shortcuts.description(true) : QString{};
-    m_shortcutMessage = message;
-    if (m_editor) {
-        m_editor->setShortcuts(m_fullShortcut, m_regionShortcut, m_shortcutMessage);
+    fullShortcut_ = full ? shortcuts_.description(false) : QString{};
+    regionShortcut_ = region ? shortcuts_.description(true) : QString{};
+    shortcutMessage_ = message;
+    if (editor_) {
+        editor_->setShortcuts(fullShortcut_, regionShortcut_, shortcutMessage_);
     }
 }

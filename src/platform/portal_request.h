@@ -17,20 +17,20 @@ class Request : public QObject {
     Q_OBJECT
 
 public:
-    explicit Request(QObject* parent);
+    explicit Request(QObject *parent);
     ~Request() override;
-    void start(const QString& interface, const QString& method, QVariantList arguments,
+    void start(const QString &interface, const QString &method, QVariantList arguments,
                QVariantMap options = {});
 
 signals:
-    void responded(uint code, const QVariantMap& results);
+    void responded(uint code, const QVariantMap &results);
     void failed();
 
 private slots:
-    void receiveResponse(uint code, const QVariantMap& results);
+    void receiveResponse(uint code, const QVariantMap &results);
 
 private:
-    bool subscribe(const QString& path);
+    bool subscribe(const QString &path);
     void unsubscribe();
     void fail();
 
@@ -38,4 +38,4 @@ private:
     QString path_;
     bool finished_ = false;
 };
-}
+} // namespace Portal

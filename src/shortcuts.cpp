@@ -24,8 +24,6 @@
 #endif
 
 namespace {
-const auto unavailable = QT_TRANSLATE_NOOP("GlobalShortcuts",
-    "Some shortcuts could not be registered. You can still capture from the ScreenFrame window.");
 
 #if defined(Q_OS_MACOS)
 bool systemUsesRegionShortcut()
@@ -61,7 +59,7 @@ class PortalShortcuts : public QObject {
     Q_OBJECT
 
 public:
-    PortalShortcuts(GlobalShortcuts& owner, bool systemRegion)
+    PortalShortcuts(GlobalShortcuts &owner, bool systemRegion)
         : QObject(&owner), owner_(owner), bus_(Portal::connection()), systemRegion_(systemRegion),
           regionId_(systemRegion ? QStringLiteral("region") : QStringLiteral("region-standard"))
     {
@@ -80,10 +78,10 @@ public:
     {
         qDBusRegisterMetaType<Shortcut>();
         qDBusRegisterMetaType<ShortcutList>();
-        auto* request = new Portal::Request(this);
+        auto *request = new Portal::Request(this);
         connect(request, &Portal::Request::failed, this, &PortalShortcuts::unavailable);
         connect(request, &Portal::Request::responded, this,
-                [this](uint code, const QVariantMap& results) {
+                [this](uint code, const QVariantMap &results) {
             session_ = results.value(QStringLiteral("session_handle")).toString();
             if (code != 0 || session_.isEmpty()) {
                 unavailable();
@@ -98,8 +96,8 @@ public:
     QString description(bool region) const { return descriptions_[region]; }
 
 private slots:
-    void activated(const QDBusObjectPath& session, const QString& id,
-                   qulonglong, const QVariantMap&)
+    void activated(const QDBusObjectPath &session, const QString &id,
+                   qulonglong, const QVariantMap &)
     {
         if (session.path() != session_)
             return;
@@ -107,7 +105,7 @@ private slots:
             emit owner_.captureRequested(id == regionId_);
     }
 
-    void shortcutsChanged(const QDBusMessage& message)
+    void shortcutsChanged(const QDBusMessage &message)
     {
         const auto arguments = message.arguments();
         if (arguments.size() == 2 && arguments[0].value<QDBusObjectPath>().path() == session_)
@@ -131,16 +129,16 @@ private:
                      this, SLOT(closed()));
 
         const ShortcutList keys{
-            {fullId, {{QStringLiteral("description"), tr("Capture screen")},
+            {fullId, {{QStringLiteral("description"), QStringLiteral("Capture screen")},
                       {QStringLiteral("preferred_trigger"), QStringLiteral("CTRL+ALT+SHIFT+1")}}},
-            {regionId_, {{QStringLiteral("description"), tr("Capture region")},
+            {regionId_, {{QStringLiteral("description"), QStringLiteral("Capture region")},
                          {QStringLiteral("preferred_trigger"),
                           systemRegion_ ? QStringLiteral("LOGO+s") : QStringLiteral("CTRL+ALT+SHIFT+2")}}}
         };
-        auto* request = new Portal::Request(this);
+        auto *request = new Portal::Request(this);
         connect(request, &Portal::Request::failed, this, &PortalShortcuts::unavailable);
         connect(request, &Portal::Request::responded, this,
-                [this](uint code, const QVariantMap& results) {
+                [this](uint code, const QVariantMap &results) {
             if (code == 0)
                 update(qdbus_cast<ShortcutList>(results.value(QStringLiteral("shortcuts"))));
             else
@@ -150,7 +148,7 @@ private:
                        {QVariant::fromValue(QDBusObjectPath(session_)), QVariant::fromValue(keys), QString{}});
     }
 
-    void update(const ShortcutList& keys)
+    void update(const ShortcutList &keys)
     {
         descriptions_ = {};
         std::array<bool, 2> registered{};
@@ -173,13 +171,13 @@ private:
     QString fallback() const
     {
         return systemRegion_
-            ? tr("In your desktop keyboard settings, assign Super+S to "
+            ? QStringLiteral("In your desktop keyboard settings, assign Super+S to "
                  "screenframe capture region. Free the shortcut first if it is already in use.")
-            : tr("In your desktop keyboard settings, assign Ctrl+Alt+Shift+1 and Ctrl+Alt+Shift+2 "
+            : QStringLiteral("In your desktop keyboard settings, assign Ctrl+Alt+Shift+1 and Ctrl+Alt+Shift+2 "
                  "to screenframe capture full and screenframe capture region.");
     }
 
-    GlobalShortcuts& owner_;
+    GlobalShortcuts &owner_;
     QDBusConnection bus_;
     bool systemRegion_;
     QString regionId_;
@@ -189,7 +187,7 @@ private:
 
 class X11Shortcuts {
 public:
-    explicit X11Shortcuts(GlobalShortcuts& owner)
+    explicit X11Shortcuts(GlobalShortcuts &owner)
         : owner_(owner), connection_(xcb_connect(nullptr, nullptr))
     {
     }
@@ -206,7 +204,7 @@ public:
         if (!connection_ || xcb_connection_has_error(connection_))
             return {};
 
-        const auto* setup = xcb_get_setup(connection_);
+        const auto *setup = xcb_get_setup(connection_);
         for (auto root = xcb_setup_roots_iterator(setup); root.rem; xcb_screen_next(&root))
             roots_.append(root.data->root);
 
@@ -217,7 +215,7 @@ public:
             xcb_get_keyboard_mapping_reply(connection_, cookie, nullptr), &std::free);
         if (!map)
             return {};
-        const auto* symbols = xcb_get_keyboard_mapping_keysyms(map.get());
+        const auto *symbols = xcb_get_keyboard_mapping_keysyms(map.get());
         auto keycode = [&](xcb_keysym_t symbol) -> xcb_keycode_t {
             for (int i = 0; i < count; ++i) {
                 for (int level = 0; level < map->keysyms_per_keycode; ++level) {
@@ -241,7 +239,7 @@ public:
         uint16_t alt = 0;
         uint16_t super = 0;
         if (modifiers) {
-            const auto* keys = xcb_get_modifier_mapping_keycodes(modifiers.get());
+            const auto *keys = xcb_get_modifier_mapping_keycodes(modifiers.get());
             for (int i = 0; i < 8 * modifiers->keycodes_per_modifier; ++i) {
                 if (!keys[i])
                     continue;
@@ -281,7 +279,7 @@ private:
         }
     }
 
-    bool grab(xcb_keycode_t key, const QList<uint16_t>& masks)
+    bool grab(xcb_keycode_t key, const QList<uint16_t> &masks)
     {
         if (!key)
             return false;
@@ -294,7 +292,7 @@ private:
         }
         bool succeeded = true;
         for (const auto request : requests) {
-            if (auto* error = xcb_request_check(connection_, request)) {
+            if (auto *error = xcb_request_check(connection_, request)) {
                 succeeded = false;
                 std::free(error);
             }
@@ -311,10 +309,10 @@ private:
 
     void process()
     {
-        while (auto* event = xcb_poll_for_event(connection_)) {
+        while (auto *event = xcb_poll_for_event(connection_)) {
             const auto type = event->response_type & 0x7f;
             if (type == XCB_KEY_PRESS || type == XCB_KEY_RELEASE) {
-                const auto* key = reinterpret_cast<xcb_key_press_event_t*>(event);
+                const auto *key = reinterpret_cast<xcb_key_press_event_t *>(event);
                 for (std::size_t i = 0; i < keycodes_.size(); ++i) {
                     if (keycodes_[i] != key->detail)
                         continue;
@@ -330,8 +328,8 @@ private:
             notifier_->setEnabled(false);
     }
 
-    GlobalShortcuts& owner_;
-    xcb_connection_t* connection_;
+    GlobalShortcuts &owner_;
+    xcb_connection_t *connection_;
     QList<xcb_window_t> roots_;
     std::array<QList<uint16_t>, 2> masks_;
     std::array<xcb_keycode_t, 2> keycodes_{};
@@ -339,7 +337,7 @@ private:
     std::unique_ptr<QSocketNotifier> notifier_;
 };
 #endif
-}
+} // namespace
 
 class GlobalShortcuts::Backend
 #if defined(Q_OS_WIN)
@@ -347,7 +345,7 @@ class GlobalShortcuts::Backend
 #endif
 {
 public:
-    explicit Backend(GlobalShortcuts& owner) : owner_(owner) {}
+    explicit Backend(GlobalShortcuts &owner) : owner_(owner) {}
     ~Backend()
     {
 #if defined(Q_OS_WIN)
@@ -412,12 +410,12 @@ public:
         QString warning;
 #if defined(Q_OS_MACOS)
         if (systemRegion_ && !registered[1]) {
-            warning = tr("⌘⇧5 is unavailable. Disable Screenshot and recording options in System Settings → "
+            warning = QStringLiteral("⌘⇧5 is unavailable. Disable Screenshot and recording options in System Settings → "
                          "Keyboard → Keyboard Shortcuts → Screenshots, then restart ScreenFrame.");
         }
 #endif
         if (warning.isEmpty() && (!registered[0] || !registered[1])) {
-            warning = tr(unavailable);
+            warning = QStringLiteral("Some shortcuts could not be registered. You can still capture from the ScreenFrame window.");
         }
         emit owner_.statusChanged(registered[0], registered[1], warning);
     }
@@ -451,9 +449,9 @@ private:
 #if defined(Q_OS_WIN)
     std::unique_ptr<WindowsRegionShortcut> regionShortcut_;
 
-    bool nativeEventFilter(const QByteArray&, void* message, qintptr* result) override
+    bool nativeEventFilter(const QByteArray &, void *message, qintptr *result) override
     {
-        const auto* event = static_cast<MSG*>(message);
+        const auto *event = static_cast<MSG *>(message);
         if (event->message != WM_HOTKEY
             || (event->wParam != 1 && (event->wParam != 2 || systemRegion_)))
             return false;
@@ -463,7 +461,7 @@ private:
         return true;
     }
 #elif defined(Q_OS_MACOS)
-    static OSStatus handleHotkey(EventHandlerCallRef, EventRef event, void* context)
+    static OSStatus handleHotkey(EventHandlerCallRef, EventRef event, void *context)
     {
         EventHotKeyID key{};
         if (GetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID,
@@ -471,8 +469,8 @@ private:
             || key.signature != signature || key.id < 1 || key.id > 2)
             return eventNotHandledErr;
 
-        auto& self = *static_cast<Backend*>(context);
-        auto& held = self.held_[key.id - 1];
+        auto &self = *static_cast<Backend *>(context);
+        auto &held = self.held_[key.id - 1];
         if (GetEventKind(event) == kEventHotKeyReleased) {
             held = false;
         } else if (!held) {
@@ -490,12 +488,12 @@ private:
     std::unique_ptr<PortalShortcuts> portal_;
     std::unique_ptr<X11Shortcuts> x11_;
 #endif
-    GlobalShortcuts& owner_;
+    GlobalShortcuts &owner_;
     bool started_ = false;
     bool systemRegion_ = false;
 };
 
-GlobalShortcuts::GlobalShortcuts(QObject* parent)
+GlobalShortcuts::GlobalShortcuts(QObject *parent)
     : QObject(parent), backend_(std::make_unique<Backend>(*this))
 {
 }

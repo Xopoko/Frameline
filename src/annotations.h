@@ -8,8 +8,6 @@
 
 class QPainter;
 
-namespace screenframe {
-
 enum class Tool { Arrow, Pen, Rectangle, Blur, Redact };
 
 struct Annotation {
@@ -26,5 +24,3 @@ struct Annotation {
 void paintAnnotation(QPainter &painter, const Annotation &annotation);
 void applyAnnotation(QImage &image, const Annotation &annotation);
 QImage renderAnnotations(const QImage &source, const QVector<Annotation> &annotations, qsizetype count);
-
-}

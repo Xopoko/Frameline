@@ -46,7 +46,7 @@ void preventStartMenu()
     input.ki.dwFlags = KEYEVENTF_KEYUP;
     SendInput(1, &input, sizeof(input));
 }
-}
+} // namespace
 
 class WindowsRegionShortcut::Hook {
 public:
@@ -71,7 +71,7 @@ public:
             thread_ = std::thread([this, ready = std::move(ready)]() mutable {
                 run(ready);
             });
-        } catch (const std::system_error&) {
+        } catch (const std::system_error &) {
             return false;
         }
         threadId_ = started.get();
@@ -81,7 +81,7 @@ public:
     }
 
 private:
-    void run(std::promise<DWORD>& ready)
+    void run(std::promise<DWORD> &ready)
     {
         MSG message{};
         PeekMessageW(&message, nullptr, 0, 0, PM_NOREMOVE);
@@ -103,7 +103,7 @@ private:
     static LRESULT CALLBACK keyboardEvent(int code, WPARAM message, LPARAM data)
     {
         if (code == HC_ACTION && current_) {
-            const auto* key = reinterpret_cast<const KBDLLHOOKSTRUCT*>(data);
+            const auto *key = reinterpret_cast<const KBDLLHOOKSTRUCT *>(data);
             if (key->vkCode == 'S' && !(key->flags & LLKHF_INJECTED)) {
                 const bool pressed = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
                 const bool exactChord = pressed && (keyDown(VK_LWIN) || keyDown(VK_RWIN))
@@ -112,7 +112,7 @@ private:
                 const auto decision = current_->keyState_.onS(pressed, exactChord);
                 if (decision == WindowsRegionKeyState::Decision::Capture) {
                     preventStartMenu();
-                    auto* owner = current_;
+                    auto *owner = current_;
                     QMetaObject::invokeMethod(&owner->dispatch_, [owner] { owner->handler_(); },
                                               Qt::QueuedConnection);
                 }
@@ -123,7 +123,7 @@ private:
         return CallNextHookEx(nullptr, code, message, data);
     }
 
-    static thread_local Hook* current_;
+    static thread_local Hook *current_;
     QObject dispatch_;
     std::function<void()> handler_;
     std::thread thread_;
@@ -131,7 +131,7 @@ private:
     WindowsRegionKeyState keyState_;
 };
 
-thread_local WindowsRegionShortcut::Hook* WindowsRegionShortcut::Hook::current_ = nullptr;
+thread_local WindowsRegionShortcut::Hook *WindowsRegionShortcut::Hook::current_ = nullptr;
 
 WindowsRegionShortcut::WindowsRegionShortcut(std::function<void()> handler)
     : hook_(std::make_unique<Hook>(std::move(handler)))

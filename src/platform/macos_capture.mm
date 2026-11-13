@@ -24,7 +24,7 @@ QImage toImage(CGImageRef source)
     const auto colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
     const auto context = CGBitmapContextCreate(image.bits(), width, height, 8,
                                                image.bytesPerLine(), colorSpace,
-                                               kCGImageAlphaNoneSkipLast | kCGBitmapByteOrder32Big);
+                                               CGBitmapInfo(kCGImageAlphaNoneSkipLast) | kCGBitmapByteOrder32Big);
     CGColorSpaceRelease(colorSpace);
     if (!context)
         return {};
@@ -35,7 +35,7 @@ QImage toImage(CGImageRef source)
 }
 
 // The Qt screen and Core Graphics display use the same top-left coordinate system.
-QList<Display> matchDisplays(const QList<QScreen*>& screens)
+QList<Display> matchDisplays(const QList<QScreen *> &screens)
 {
     uint32_t count = 0;
     if (CGGetActiveDisplayList(0, nullptr, &count) != kCGErrorSuccess || !count)
@@ -46,7 +46,7 @@ QList<Display> matchDisplays(const QList<QScreen*>& screens)
     ids.resize(count);
 
     QList<Display> displays;
-    for (auto* screen : screens) {
+    for (auto *screen : screens) {
         if (!screen)
             continue;
         for (auto id : ids) {
@@ -61,12 +61,12 @@ QList<Display> matchDisplays(const QList<QScreen*>& screens)
     }
     return displays;
 }
-}
+} // namespace
 
-void captureMacScreens(ScreenCapture* capture, const QList<QScreen*>& screens)
+void captureMacScreens(ScreenCapture *capture, const QList<QScreen *> &screens)
 {
     if (!CGPreflightScreenCaptureAccess() && !CGRequestScreenCaptureAccess()) {
-        emit capture->failed(ScreenCapture::tr(
+        emit capture->failed(QStringLiteral(
             "Allow ScreenFrame in System Settings → Privacy & Security → Screen & System Audio Recording, "
             "then restart the app."));
         return;
@@ -77,9 +77,9 @@ void captureMacScreens(ScreenCapture* capture, const QList<QScreen*>& screens)
     const auto processId = QCoreApplication::applicationPid();
     const QPointer<ScreenCapture> owner(capture);
     [SCShareableContent getShareableContentExcludingDesktopWindows:NO onScreenWindowsOnly:YES
-                                                 completionHandler:^(SCShareableContent* content, NSError*) {
-        NSArray<SCRunningApplication*>* excludedApplications = @[];
-        for (SCRunningApplication* app in content.applications) {
+                                                 completionHandler:^(SCShareableContent *content, NSError *) {
+        NSArray<SCRunningApplication *> *excludedApplications = @[];
+        for (SCRunningApplication *app in content.applications) {
             if (app.processID == processId) {
                 excludedApplications = @[app];
                 break;
@@ -88,8 +88,8 @@ void captureMacScreens(ScreenCapture* capture, const QList<QScreen*>& screens)
         const auto queue = dispatch_group_create();
         const auto resultsQueue = dispatch_queue_create("screenframe.capture", DISPATCH_QUEUE_SERIAL);
         __block QList<CaptureFrame> frames;
-        for (const auto& display : displays) {
-            for (SCDisplay* source in content.displays) {
+        for (const auto &display : displays) {
+            for (SCDisplay *source in content.displays) {
                 if (source.displayID != display.id)
                     continue;
                 const auto filter = [[SCContentFilter alloc] initWithDisplay:source
@@ -102,7 +102,7 @@ void captureMacScreens(ScreenCapture* capture, const QList<QScreen*>& screens)
                 const auto screen = display.screen;
                 dispatch_group_enter(queue);
                 [SCScreenshotManager captureImageWithFilter:filter configuration:config
-                                           completionHandler:^(CGImageRef image, NSError*) {
+                                           completionHandler:^(CGImageRef image, NSError *) {
                     const auto pixels = toImage(image);
                     if (!pixels.isNull()) {
                         dispatch_sync(resultsQueue, ^{
@@ -120,7 +120,7 @@ void captureMacScreens(ScreenCapture* capture, const QList<QScreen*>& screens)
                 if (!owner)
                     return;
                 if (capturedFrames.isEmpty())
-                    emit owner->failed(ScreenCapture::tr("Could not capture the screen on macOS."));
+                    emit owner->failed(QStringLiteral("Could not capture the screen on macOS."));
                 else
                     emit owner->captured(capturedFrames);
             }, Qt::QueuedConnection);

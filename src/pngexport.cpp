@@ -1,8 +1,13 @@
 #include "pngexport.h"
 
+#include <QDateTime>
+#include <QDir>
+#include <QFileDialog>
 #include <QImage>
 #include <QImageWriter>
+#include <QMessageBox>
 #include <QSaveFile>
+#include <QStandardPaths>
 
 bool savePng(const QImage &image, const QString &path, QString *error)
 {
@@ -24,6 +29,28 @@ bool savePng(const QImage &image, const QString &path, QString *error)
     }
     if (!file.commit()) {
         *error = file.errorString();
+        return false;
+    }
+    return true;
+}
+
+bool saveImageAs(QWidget *parent, const QImage &image, const QDateTime &capturedAt)
+{
+    QString directory = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+    if (directory.isEmpty() || !QDir(directory).exists()) {
+        directory = QDir::homePath();
+    }
+    QFileDialog dialog(parent, QStringLiteral("Save screenshot"), directory, QStringLiteral("PNG (*.png)"));
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setDefaultSuffix(QStringLiteral("png"));
+    const QString timestamp = capturedAt.toLocalTime().toString(QStringLiteral("yyyy-MM-dd_HH-mm-ss"));
+    dialog.selectFile(QStringLiteral("Screenshot_%1.png").arg(timestamp));
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
+        return false;
+    }
+    QString error;
+    if (!savePng(image, dialog.selectedFiles().constFirst(), &error)) {
+        QMessageBox::warning(parent, QStringLiteral("Could not save screenshot"), error);
         return false;
     }
     return true;

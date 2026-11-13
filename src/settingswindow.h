@@ -15,7 +15,8 @@ public:
     ~SettingsWindow() override;
 
     AppSettings settings() const;
-    void setTestResult(const QString &message, bool success);
+    // An empty error means the connection succeeded.
+    void setTestResult(const QString &error);
 
 signals:
     void testRequested(const LibrarySettings &settings);

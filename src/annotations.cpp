@@ -8,7 +8,6 @@
 #include <cmath>
 #include <vector>
 
-namespace screenframe {
 namespace {
 
 constexpr int blurRadius = 15;
@@ -115,7 +114,7 @@ void paintArrow(QPainter &painter, const Annotation &annotation)
     painter.drawPolygon(QPolygonF{end, headBase + headHalfWidth, headBase - headHalfWidth});
 }
 
-}
+} // namespace
 
 QRectF Annotation::bounds() const
 {
@@ -245,6 +244,4 @@ QImage renderAnnotations(const QImage &source, const QVector<Annotation> &annota
         applyAnnotation(result, annotations.at(index));
     }
     return result;
-}
-
 }
