@@ -62,7 +62,18 @@ fi
 
 ln -s /Applications "$stage/Applications"
 image="$work/ScreenFrame.dmg"
-hdiutil create -fs HFS+ -format UDZO -volname ScreenFrame -srcfolder "$stage" "$image"
+for attempt in 1 2 3; do
+    if hdiutil create -fs HFS+ -format UDZO -volname ScreenFrame -srcfolder "$stage" "$image" >"$work/create.log" 2>&1; then
+        cat "$work/create.log"
+        break
+    fi
+    cat "$work/create.log" >&2
+    if [[ "$attempt" == 3 ]] || ! grep -q 'Resource busy' "$work/create.log"; then
+        exit 1
+    fi
+    rm -f -- "$image"
+    sleep "$((attempt * 3))"
+done
 hdiutil verify "$image"
 ln -- "$image" "$output"
 echo "Created $output"
