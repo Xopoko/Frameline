@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Name=ScreenFrame
+Comment=Take and annotate screenshots
+Comment[ru]=Захват и редактирование скриншотов
+Exec=screenframe
+Icon=io.github.xopoko.ScreenFrame
+Terminal=false
+Categories=Graphics;
+StartupNotify=true
+Actions=Full;Region;
+
+[Desktop Action Full]
+Name=Capture screen
+Name[ru]=Снять экран
+Exec=screenframe capture full
+
+[Desktop Action Region]
+Name=Capture region
+Name[ru]=Снять область
+Exec=screenframe capture region
