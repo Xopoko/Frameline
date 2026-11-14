@@ -59,7 +59,7 @@ Download the package for your system from [Releases](https://github.com/Xopoko/F
 - **macOS 14.4+**: move `Frameline.app` to Applications, allow it in **System Settings → Privacy & Security → Screen & System Audio Recording**, then reopen it.
 - **Ubuntu 24.04, amd64**: `sudo apt install ./frameline_<version>_amd64.deb`. Works on X11 and on GNOME Wayland through the screenshot portal.
 
-Frameline was called ScreenFrame until version 0.3.0. When you upgrade, your settings, queued uploads, a library kept on this computer and the choice to start at sign-in carry over on first launch. On Ubuntu the new package replaces `screenframe` and keeps the `screenframe` command working. On macOS, allow Frameline to record the screen once more, and delete the old ScreenFrame app.
+Frameline was called ScreenFrame up to version 0.3.0. When you upgrade to Frameline, your settings, queued uploads, a library kept on this computer and the choice to start at sign-in carry over on first launch. On Ubuntu the new package replaces `screenframe` and keeps the `screenframe` command working. On macOS, allow Frameline to record the screen once more, and delete the old ScreenFrame app.
 
 ## Usage
 
