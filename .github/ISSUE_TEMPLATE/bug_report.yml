@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in ScreenFrame doesn't work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please use sample content in screenshots, and leave out access tokens, SSH hosts and personal paths. Report security problems privately as described in SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what ScreenFrame did instead.
+      placeholder: I pressed the region shortcut over a full-screen video and the overlay opened on the wrong monitor.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Press …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ScreenFrame version
+      description: Run `screenframe --version`.
+      placeholder: ScreenFrame 0.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Linux (X11)
+        - Linux (Wayland)
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System details
+      description: OS version, display setup and scale factors if it involves capture, and desktop environment on Linux.
+      placeholder: macOS 15.1, built-in Retina plus a 1080p display
+  - type: dropdown
+    id: library
+    attributes:
+      label: Shared library
+      options:
+        - Not used
+        - On this computer
+        - Over SSH
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or screenshots
+      description: Terminal output from running ScreenFrame, or screenshots of the problem with sample content.
+      render: text

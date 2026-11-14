@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest something that would make ScreenFrame better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation and what gets in the way today, rather than a specific solution.
+      placeholder: I annotate the same kind of screenshot many times a day and keep redrawing numbered steps by hand.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: How you imagine it working, if you have an idea.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platforms it matters on
+      multiple: true
+      options:
+        - Windows
+        - macOS
+        - Linux

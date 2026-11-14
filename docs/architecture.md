@@ -20,7 +20,7 @@ Everything except `main.cpp` is built into the `screenframe_core` static library
 | `controls` | Self-painted controls used by every window: buttons, toggle, segmented control, floating islands, toasts, banners and empty states. |
 | `pngexport` | PNG writing and the save dialog. |
 
-`tools/shots.cpp` builds `screenframe_shots`, which renders every window and state to PNG for visual review: `screenframe_shots <dir> [port token]` (pass a running library's port and token to include the grid and viewer), and `QT_QPA_PLATFORM=offscreen screenframe_shots <dir> --region` for the selection overlay. `SCREENFRAME_THEME=light` or `dark` overrides the system appearance.
+`tools/shots.cpp` builds `screenframe_shots`, which renders every window and state to PNG for visual review: `screenframe_shots <dir> [port token]` (pass a running library's port and token to include the grid and viewer), and `QT_QPA_PLATFORM=offscreen screenframe_shots <dir> --region` for the selection overlay. The README demo is recorded with `--demo-editor` and, offscreen, `--demo-region`; each run writes numbered frames and a `frames.txt` with the pointer position per frame, for compositing into `docs/media/demo.gif`. `SCREENFRAME_THEME=light` or `dark` overrides the system appearance.
 
 Platform code stays behind `#if defined(Q_OS_…)` in `capture`, `shortcuts` and `regionselector`, or in `src/platform`.
 

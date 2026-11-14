@@ -1,6 +1,55 @@
-# ScreenFrame
+<p align="center">
+  <img src="resources/ScreenFrame.png" width="104" alt="ScreenFrame icon">
+</p>
 
-A native screenshot tool for Windows, macOS and Linux, written in C++ with Qt Widgets. Capture the whole screen or a region, mark it up, then copy or save it. An optional self-hosted library collects screenshots from all your devices.
+<h1 align="center">ScreenFrame</h1>
+
+<p align="center">
+  <strong>Capture it. Mark it up. Share it.</strong><br>
+  A fast, native screenshot tool for Windows, macOS and Linux,<br>
+  with an optional library you host yourself.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Xopoko/ScreenFrame/actions/workflows/build.yml"><img src="https://github.com/Xopoko/ScreenFrame/actions/workflows/build.yml/badge.svg" alt="Build and test"></a>
+  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-5fe3b5?style=flat-square&labelColor=151a20" alt="Windows, macOS and Linux">
+  <img src="https://img.shields.io/badge/Qt-6-5fe3b5?style=flat-square&labelColor=151a20" alt="Qt 6">
+  <img src="https://img.shields.io/badge/C%2B%2B-20-5fe3b5?style=flat-square&labelColor=151a20" alt="C++20">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-5fe3b5?style=flat-square&labelColor=151a20" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <img src="docs/media/demo.gif" width="880" alt="Selecting a region of an API keys page, redacting the live key, blurring the test keys, pointing an arrow at the Create key button and copying the result">
+</p>
+
+## Why ScreenFrame
+
+- **One shortcut away.** Press `⌘⌥⇧2` or `Ctrl+Alt+Shift+2` in any app. The screen freezes, so menus and tooltips stay where they were while you drag.
+- **Markup that keeps secrets secret.** Redact paints a solid block over keys and passwords; Blur softens the rest. Arrows, pen and rectangles for everything else, with full undo.
+- **Native on every desktop.** C++ and Qt Widgets. Capture, edit and save without an account. It follows your system's light or dark appearance.
+- **Your screenshots, on your devices.** Create a library in Settings and connect other computers through Tailscale, or keep using an existing SSH library. Failed uploads wait in a local queue, and every connected device can browse the library.
+- **Scriptable.** Capture from the command line or a desktop shortcut, straight to a PNG.
+
+## A closer look
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/region.png" alt="Region selection with viewfinder corners and a size badge"></td>
+    <td width="50%"><img src="docs/media/editor-themes.png" alt="The editor in dark and light appearance"></td>
+  </tr>
+  <tr>
+    <td><strong>Select on a frozen screen.</strong> Crosshair guides line up the first corner and the badge shows the exact size in pixels.</td>
+    <td><strong>Mark up in light or dark.</strong> Tools, colors and stroke widths live in one floating bar; the screenshot gets the rest of the window.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/library.png" alt="Library grid of screenshots from several devices"></td>
+    <td><img src="docs/media/viewer.png" alt="Library viewer showing one screenshot full size"></td>
+  </tr>
+  <tr>
+    <td><strong>Every device, one library.</strong> Screenshots from all your machines, newest first, with the device and time on each.</td>
+    <td><strong>Open, copy, save again.</strong> Step through with the arrow keys, view at actual size, copy to the clipboard.</td>
+  </tr>
+</table>
 
 ## Install
 
@@ -21,7 +70,14 @@ Turn on **Start ScreenFrame when I sign in** in **Settings** and save to start S
 
 For a region, drag over the frozen screen and release. `Esc` or a right click cancels.
 
-Editor tools: Arrow `A`, Pen `P`, Rectangle `R`, Blur `B`, Redact `X`. Use Redact rather than Blur for sensitive details. Zoom with `+` and `-`, `Ctrl`+scroll or a trackpad pinch; `0` fits the window and `1` shows actual size. In the library viewer, `←` and `→` move between screenshots.
+| In the editor | Keys |
+| --- | --- |
+| Arrow, Pen, Rectangle, Blur, Redact | `A` `P` `R` `B` `X` |
+| Copy, save | `⌘C` `⌘S` / `Ctrl+C` `Ctrl+S` |
+| Undo, redo | `⌘Z` `⇧⌘Z` / `Ctrl+Z` and `Ctrl+Y` (Windows) or `Ctrl+Shift+Z` (Linux) |
+| Zoom | `+` `-`, `Ctrl`+scroll or pinch; `0` fits, `1` is actual size |
+
+Use Redact rather than Blur for sensitive details. In the library viewer, `←` and `→` move between screenshots.
 
 ### Linux notes
 
@@ -37,6 +93,8 @@ If the global shortcuts portal is missing, bind `screenframe capture full` and `
 
 ## Shared library
 
+<img src="docs/media/settings.png" width="340" align="right" alt="ScreenFrame settings with a shared library ready and a copy connection code button">
+
 On the computer that will keep your screenshots, open **Settings → Shared library → Create here** and select **Create library**. ScreenFrame creates the library and starts it. You can use it on that computer with ScreenFrame alone.
 
 To connect another computer, including over the internet:
@@ -50,6 +108,8 @@ If the connection check fails, make sure the library computer is awake, ScreenFr
 Turn on **Archive screenshots from this device** wherever you want automatic uploads. With archiving on, the final edited image is uploaded when you close the editor, take another capture or quit. Uploads that fail are kept locally and retried. Browse the library from the editor, the tray or `screenframe library`.
 
 For a separately managed server, choose **Advanced** and see the [standalone server instructions](server/README.md).
+
+<br clear="right">
 
 ## Command line
 
@@ -79,4 +139,10 @@ python3 -B -m unittest discover -s server
 
 `cmake --install build --prefix <dir>` stages a self-contained app on Windows and macOS. On Ubuntu, `cpack --config build/CPackConfig.cmake -B dist` builds the DEB.
 
-More: [architecture](docs/architecture.md), [releasing](docs/release.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md). ScreenFrame is MIT-licensed; bundled Qt components keep their own licenses.
+The screenshots and the demo above come from the app itself: `build/screenframe_shots <dir>` renders every window and state, and `--demo-editor` / `--demo-region` record the demo frames. See [architecture](docs/architecture.md).
+
+## Contributing
+
+Bug reports and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first, use sample content in screenshots, and report security issues privately as described in [SECURITY.md](SECURITY.md). More: [architecture](docs/architecture.md), [releasing](docs/release.md).
+
+ScreenFrame is MIT-licensed; bundled Qt components keep their own licenses.
