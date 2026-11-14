@@ -341,7 +341,8 @@ AppSettings loadSettings(const QString &directory, QString *error)
         report(error, readError);
         return {};
     }
-    AppSettings settings{library, object->value(QStringLiteral("useSystemRegionShortcut")).toBool(), hosted};
+    AppSettings settings{library, object->value(QStringLiteral("useSystemRegionShortcut")).toBool(), hosted,
+                         object->value(QStringLiteral("autoCopyScreenshot")).toBool(true)};
     settings.hostedLibrary.directory = movedFromLegacyDirectory(settings.hostedLibrary.directory);
     readError = hostedConnectionError(settings);
     report(error, readError);
@@ -380,7 +381,8 @@ bool saveSettings(const AppSettings &settings, const QString &directory, QString
         libraryObject.insert(QStringLiteral("address"), library.address);
     QJsonObject object{{QStringLiteral("schemaVersion"), 1},
                        {QStringLiteral("library"), libraryObject},
-                       {QStringLiteral("useSystemRegionShortcut"), settings.useSystemRegionShortcut}};
+                       {QStringLiteral("useSystemRegionShortcut"), settings.useSystemRegionShortcut},
+                       {QStringLiteral("autoCopyScreenshot"), settings.autoCopyScreenshot}};
     if (hosted != HostedLibrarySettings{}) {
         object.insert(QStringLiteral("hostedLibrary"),
                       QJsonObject{{QStringLiteral("enabled"), hosted.enabled},

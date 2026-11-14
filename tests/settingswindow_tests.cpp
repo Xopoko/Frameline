@@ -6,6 +6,7 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QLineEdit>
+#include <QTemporaryDir>
 #include <QtTest>
 
 namespace {
@@ -25,9 +26,34 @@ class SettingsWindowTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void disableAutomaticScreenshotCopy();
     void hostAndShare();
     void verifyNewConnectionBeforeSaving();
 };
+
+void SettingsWindowTests::disableAutomaticScreenshotCopy()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    SettingsWindow window(loadSettings(directory.path()));
+    auto *copy = window.findChild<Toggle *>(QStringLiteral("autoCopyScreenshot"));
+    auto *save = buttonWithText(window, QStringLiteral("Save"));
+    QVERIFY(copy && save);
+    QVERIFY(copy->isChecked());
+
+    connect(&window, &SettingsWindow::saveRequested, this, [&](const AppSettings &settings, bool) {
+        QString error;
+        QVERIFY2(saveSettings(settings, directory.path(), &error), qPrintable(error));
+        window.setSaveResult({}, settings);
+    });
+    copy->click();
+    save->click();
+    QCOMPARE(window.result(), int(QDialog::Accepted));
+
+    SettingsWindow reopened(loadSettings(directory.path()));
+    copy = reopened.findChild<Toggle *>(QStringLiteral("autoCopyScreenshot"));
+    QVERIFY(copy && !copy->isChecked());
+}
 
 void SettingsWindowTests::hostAndShare()
 {

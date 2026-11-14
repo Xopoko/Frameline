@@ -74,6 +74,8 @@ Turn on **Start Frameline when I sign in** in **Settings** and save to start Fra
 
 For a region, drag over the frozen screen and release. `Esc` or a right click cancels.
 
+Frameline copies new screenshots to the clipboard by default. Turn off **Copy screenshots to clipboard** under **Settings → Capture** to disable this.
+
 | In the editor | Keys |
 | --- | --- |
 | Arrow, Pen, Rectangle, Blur, Redact | `A` `P` `R` `B` `X` |
@@ -86,6 +88,8 @@ Use Redact rather than Blur for sensitive details. In the library viewer, `←` 
 ### Linux notes
 
 On Wayland the desktop may ask for permission to capture, and GNOME may also save its own copy in Pictures. A full-screen capture is whatever the screenshot portal returns, usually the whole desktop, and region capture shows it on one monitor.
+
+On Wayland, automatic copying uses `wl-clipboard`, which is installed with the `.deb` package.
 
 GNOME can run `frameline capture region` on `Super+S` even when Frameline is closed:
 

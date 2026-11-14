@@ -229,7 +229,7 @@ struct SettingsWindow::Ui {
         column->addSpacing(28);
         addStartup(column);
         column->addSpacing(28);
-        addShortcuts(column, settings.useSystemRegionShortcut);
+        addCapture(column);
         column->addStretch();
         scroll->setWidget(page);
         root->addWidget(scroll, 1);
@@ -252,6 +252,7 @@ struct SettingsWindow::Ui {
     QScrollArea *scroll = nullptr;
     QWidget *page = nullptr;
     Toggle *autostart = nullptr;
+    Toggle *autoCopyScreenshot = nullptr;
     Toggle *takeover = nullptr;
     Keycap *regionCap = nullptr;
     Segmented *connection = nullptr;
@@ -305,11 +306,16 @@ struct SettingsWindow::Ui {
             : error, "caption", page));
     }
 
-    void addShortcuts(QVBoxLayout *column, bool useSystemRegionShortcut)
+    void addCapture(QVBoxLayout *column)
     {
-        column->addWidget(theme::label(QStringLiteral("Capture shortcuts"), "sectionTitle", page));
+        column->addWidget(theme::label(QStringLiteral("Capture"), "sectionTitle", page));
         column->addSpacing(12);
         auto *group = new Group(page);
+        autoCopyScreenshot = new Toggle(QStringLiteral("Copy screenshots to clipboard"));
+        autoCopyScreenshot->setObjectName(QStringLiteral("autoCopyScreenshot"));
+        autoCopyScreenshot->setChecked(saved.autoCopyScreenshot);
+        group->addWidgetRow(autoCopyScreenshot);
+        const bool useSystemRegionShortcut = saved.useSystemRegionShortcut;
         regionCap = new Keycap(useSystemRegionShortcut ? systemKeys : regionKeys);
         group->addKeyRow(QStringLiteral("Capture a region"), regionCap);
         group->addKeyRow(QStringLiteral("Capture the screen"), new Keycap(fullKeys));
@@ -581,6 +587,7 @@ struct SettingsWindow::Ui {
         if (error)
             error->clear();
         AppSettings result;
+        result.autoCopyScreenshot = autoCopyScreenshot->isChecked();
         result.useSystemRegionShortcut = takeover->isChecked();
         result.hostedLibrary = saved.hostedLibrary;
         result.hostedLibrary.enabled = false;
@@ -661,6 +668,7 @@ struct SettingsWindow::Ui {
         autostart->setEnabled(!busy && startupEditable);
         for (QWidget *control : {libraryDetails, hostDetails, joinDetails, tailscaleDetails, manualDetails,
                                  static_cast<QWidget *>(test), static_cast<QWidget *>(save),
+                                 static_cast<QWidget *>(autoCopyScreenshot),
                                  static_cast<QWidget *>(takeover)}) {
             control->setEnabled(!busy);
         }

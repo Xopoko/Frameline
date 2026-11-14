@@ -22,6 +22,10 @@
 
 #if defined(Q_OS_WIN)
 #include "platform/windows_shortcuts.h"
+#elif defined(Q_OS_LINUX)
+#include "application.h"
+
+#include <QClipboard>
 #endif
 
 namespace {
@@ -74,6 +78,8 @@ private slots:
 #endif
 #if defined(Q_OS_WIN)
     void windowsRegionKey();
+#elif defined(Q_OS_LINUX)
+    void captureCopiesImageToClipboard();
 #endif
 };
 
@@ -430,6 +436,54 @@ void FramelineTests::windowsRegionKey()
     WindowsRegionKeyState heldAtStart(true);
     QVERIFY2(heldAtStart.onS(true, true) == Decision::Pass && heldAtStart.onS(false, true) == Decision::Pass,
              "A key held while starting the hook must finish without interception.");
+}
+#elif defined(Q_OS_LINUX)
+void FramelineTests::captureCopiesImageToClipboard()
+{
+    if (QApplication::platformName() != QStringLiteral("offscreen") || ScreenCapture::usesScreenshotPortal())
+        QSKIP("This test requires the offscreen platform without the Wayland screenshot portal.");
+
+    QTemporaryDir home;
+    QVERIFY(home.isValid());
+    const QByteArray previousHome = qgetenv("HOME");
+    const bool quitOnLastWindow = QApplication::quitOnLastWindowClosed();
+    const auto restore = qScopeGuard([&] {
+        if (previousHome.isNull())
+            qunsetenv("HOME");
+        else
+            qputenv("HOME", previousHome);
+        QApplication::setQuitOnLastWindowClosed(quitOnLastWindow);
+    });
+    QVERIFY(qputenv("HOME", QFile::encodeName(home.path())));
+    QCOMPARE(QDir::homePath(), home.path());
+
+    QWidget sample;
+    sample.setStyleSheet(QStringLiteral("background: #246798;"));
+    sample.showFullScreen();
+
+    for (bool enabled : {true, false}) {
+        if (!enabled) {
+            AppSettings settings;
+            settings.autoCopyScreenshot = false;
+            QString error;
+            QVERIFY2(saveSettings(settings, defaultSettingsDirectory(), &error), qPrintable(error));
+        }
+        auto *clipboard = QApplication::clipboard();
+        const QString original = QStringLiteral("Previous clipboard content");
+        clipboard->setText(original);
+
+        const QString path = home.filePath(enabled ? QStringLiteral("enabled.png") : QStringLiteral("disabled.png"));
+        FramelineApplication application({LaunchOptions::Mode::Full, path});
+        application.start();
+        QTRY_VERIFY(QFileInfo::exists(path));
+        const QImage captured(path);
+        QVERIFY(!captured.isNull());
+        if (enabled)
+            QCOMPARE(clipboard->image().convertToFormat(QImage::Format_RGB32),
+                     captured.convertToFormat(QImage::Format_RGB32));
+        else
+            QCOMPARE(clipboard->text(), original);
+    }
 }
 #endif
 

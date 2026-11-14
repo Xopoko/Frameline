@@ -156,7 +156,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(CPACK_DEBIAN_COMPRESSION_TYPE xz)
     set(CPACK_DEBIAN_PACKAGE_SECTION graphics)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "qt6-qpa-plugins, qt6-wayland, xdg-desktop-portal")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "qt6-qpa-plugins, qt6-wayland, xdg-desktop-portal, wl-clipboard")
     # Frameline was released as ScreenFrame. Replace that package and keep its command working for
     # scripts and desktop shortcuts that still call it.
     set(CPACK_DEBIAN_PACKAGE_REPLACES screenframe)

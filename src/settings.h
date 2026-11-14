@@ -39,6 +39,7 @@ struct AppSettings {
     LibrarySettings library;
     bool useSystemRegionShortcut = false;
     HostedLibrarySettings hostedLibrary;
+    bool autoCopyScreenshot = true;
 
     bool operator==(const AppSettings &) const = default;
 };

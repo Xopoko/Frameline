@@ -11,6 +11,7 @@
 #include "platform/autostart.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QDir>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -24,6 +25,8 @@
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #include <dwmapi.h>
+#elif defined(Q_OS_LINUX)
+#include <QBuffer>
 #endif
 
 namespace {
@@ -36,6 +39,40 @@ void bringToFront(QWidget &window)
     window.showNormal();
     window.raise();
     window.activateWindow();
+}
+
+#ifdef Q_OS_LINUX
+bool copyToWaylandClipboard(const QImage &image)
+{
+    QBuffer png;
+    if (!png.open(QIODevice::WriteOnly) || !image.save(&png, "PNG"))
+        return false;
+
+    // wl-copy can set the selection without focus on Frameline and keep it after exit.
+    QProcess copy;
+    copy.setStandardOutputFile(QProcess::nullDevice());
+    copy.setStandardErrorFile(QProcess::nullDevice());
+    copy.start(QStringLiteral("wl-copy"), {QStringLiteral("--type"), QStringLiteral("image/png")});
+    if (!copy.waitForStarted(500))
+        return false;
+    copy.write(png.data());
+    copy.closeWriteChannel();
+    if (!copy.waitForFinished(1000)) {
+        copy.kill();
+        copy.waitForFinished();
+        return false;
+    }
+    return copy.exitStatus() == QProcess::NormalExit && copy.exitCode() == 0;
+}
+#endif
+
+void copyScreenshotToClipboard(const QImage &image)
+{
+#ifdef Q_OS_LINUX
+    if (ScreenCapture::usesScreenshotPortal() && copyToWaylandClipboard(image))
+        return;
+#endif
+    QApplication::clipboard()->setImage(image);
 }
 
 } // namespace
@@ -493,6 +530,9 @@ void FramelineApplication::finishCapture(QImage image)
 
     const QString kind = region_ ? QStringLiteral("region") : QStringLiteral("full");
     const QDateTime capturedAt = QDateTime::currentDateTimeUtc();
+    if (settings_.autoCopyScreenshot)
+        copyScreenshotToClipboard(image);
+
     QString outputError;
     if (!options_.output.isEmpty()) {
         QString error;

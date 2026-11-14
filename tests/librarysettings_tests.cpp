@@ -123,6 +123,7 @@ void LibrarySettingsTests::legacySettingsAndQueue()
     QString error;
     const AppSettings settings = loadSettings(directory.path(), &error);
     QVERIFY2(error.isEmpty(), qPrintable(error));
+    QVERIFY(settings.autoCopyScreenshot);
     QVERIFY(settings.useSystemRegionShortcut);
     QVERIFY(settings.library.isConfigured());
     QVERIFY(settings.library.autoArchive);
