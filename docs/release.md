@@ -8,7 +8,13 @@ Build and test the release candidate from a clean checkout. The repository's **B
 | DMG | macOS 14.4+, Apple Silicon and Intel | The preview is ad hoc signed. Validate a quarantined download before public distribution. |
 | DEB | Ubuntu 24.04, amd64 | Uses system Qt packages. Capture works in X11 or through a compatible Wayland portal. |
 
-Test first launch with an empty profile and no library server. Verify capture, region selection, save, copy, and keyboard navigation. Then connect to a disposable library over SSH and verify both browsing and automatic upload. Confirm that settings and queued files survive an upgrade and that switching libraries never transfers queued files to the new server.
+Use a fresh profile and sample screenshots for these checks:
+
+1. Verify full-screen capture, region selection, save, copy, and keyboard navigation before configuring a library.
+2. Select **Create here → Create library** in **Settings → Shared library**. Capture and close a sample screenshot, open the library and check that it appears. Quit and reopen ScreenFrame, then check that you can browse the same library.
+3. Connect from another computer signed in to the same Tailscale account, preferably from a different network. Enable **Access from other devices**, apply sharing, copy the code and use **Connect** on the other computer. Verify browsing and automatic upload. Disconnect Tailscale, confirm uploads stay queued, then reconnect and confirm they arrive. Turn sharing off and verify the library still works on its own computer.
+4. Enable **Start ScreenFrame when I sign in**, sign out and back in, and verify ScreenFrame starts in the tray and serves the library. Launch the app again and check that the running instance opens its window. Disable the setting and verify it stays off at the next login.
+5. Connect to a disposable standalone library over SSH and verify browsing and automatic upload. Confirm that upgrading preserves settings and queued captures, and that queued captures stay with their original library when you switch destinations.
 
 ## Windows and macOS dependencies
 

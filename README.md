@@ -26,8 +26,8 @@
 
 - **One shortcut away.** Press `⌘⌥⇧2` or `Ctrl+Alt+Shift+2` in any app. The screen freezes, so menus and tooltips stay where they were while you drag.
 - **Markup that keeps secrets secret.** Redact paints a solid block over keys and passwords; Blur softens the rest. Arrows, pen and rectangles for everything else, with full undo.
-- **Native, not a browser in disguise.** C++ and Qt Widgets, no account and no cloud. It follows your system's light or dark appearance.
-- **Your screenshots, on your server.** The optional library is one Python file with no dependencies. Devices reach it locally or over SSH, failed uploads wait in a local queue, and every device can browse everything.
+- **Native on every desktop.** C++ and Qt Widgets. Capture, edit and save without an account. It follows your system's light or dark appearance.
+- **Your screenshots, on your devices.** Create a library in Settings and connect other computers through Tailscale, or keep using an existing SSH library. Failed uploads wait in a local queue, and every connected device can browse the library.
 - **Scriptable.** Capture from the command line or a desktop shortcut, straight to a PNG.
 
 ## A closer look
@@ -55,7 +55,7 @@
 
 - **Windows 10 1809+ / 11, x64**: extract the ZIP and run `bin/ScreenFrameGUI.exe`. The CLI is `bin/screenframe.exe`.
 - **macOS 14.4+**: move `ScreenFrame.app` to Applications, allow it in **System Settings → Privacy & Security → Screen & System Audio Recording**, then reopen it.
-- **Ubuntu 24.04, amd64**: `sudo apt install ./screenframe_0.2.0_amd64.deb`. Works on X11 and on GNOME Wayland through the screenshot portal.
+- **Ubuntu 24.04, amd64**: `sudo apt install ./screenframe_0.3.0_amd64.deb`. Works on X11 and on GNOME Wayland through the screenshot portal.
 
 ## Usage
 
@@ -65,6 +65,8 @@
 | Capture a region | `Ctrl+Alt+Shift+2` | `⌘⌥⇧2` |
 
 Global shortcuts work while ScreenFrame is running, including from the tray. In **Settings** you can move region capture to the system key instead: `Win+S`, `⌘⇧5` or `Super+S`. On macOS, first turn off **Screenshot and recording options** under **System Settings → Keyboard → Keyboard Shortcuts → Screenshots**.
+
+Turn on **Start ScreenFrame when I sign in** in **Settings** and save to start ScreenFrame in the tray at your next login. If you move the app to a new location, enable the setting from that copy.
 
 For a region, drag over the frozen screen and release. `Esc` or a right click cancels.
 
@@ -91,15 +93,21 @@ If the global shortcuts portal is missing, bind `screenframe capture full` and `
 
 ## Shared library
 
-<img src="docs/media/settings.png" width="340" align="right" alt="Library settings with an SSH connection">
+<img src="docs/media/settings.png" width="340" align="right" alt="ScreenFrame settings with a shared library ready and a copy connection code button">
 
-The library is a small Python server you host yourself. Devices reach it on the same machine or through an SSH tunnel, and every device with the access token can browse all screenshots.
+On the computer that will keep your screenshots, open **Settings → Shared library → Create here** and select **Create library**. ScreenFrame creates the library and starts it. You can use it on that computer with ScreenFrame alone.
 
-1. On an Ubuntu host, run `bash scripts/install-ubuntu-library.sh` as your user. See [server/README.md](server/README.md) for other hosts.
-2. On each device, open **Settings**, choose **This computer** or **Over SSH** under **Shared library**, and enter the port, token and a device name. The SSH host must be an OpenSSH alias that connects without prompting. **Test connection** checks it before you save.
-3. Turn on **Archive screenshots from this device** where you want uploads.
+To connect another computer, including over the internet:
 
-With archiving on, the final edited image is uploaded when you close the editor, take another capture or quit. Uploads that fail are kept locally and retried. Browse the library from the editor, the tray or `screenframe library`.
+1. Install Tailscale on both computers and sign in with the same account. [Get Tailscale](https://tailscale.com/download)
+2. On the computer with the library, turn on **Access from other devices**, select **Apply sharing**, then **Copy connection code**. If ScreenFrame has not detected Tailscale yet, select **Check Tailscale**.
+3. On the other computer, open **Settings → Shared library → Connect**, paste the code and select **Connect**. ScreenFrame checks the connection before saving it. Keep the code private. It grants read and write access to your library.
+
+If the connection check fails, make sure the library computer is awake, ScreenFrame is running, and both computers are connected to Tailscale with the same account. **Start ScreenFrame when I sign in** brings the library back when you sign in on its computer.
+
+Turn on **Archive screenshots from this device** wherever you want automatic uploads. With archiving on, the final edited image is uploaded when you close the editor, take another capture or quit. Uploads that fail are kept locally and retried. Browse the library from the editor, the tray or `screenframe library`.
+
+For a separately managed server, choose **Advanced** and see the [standalone server instructions](server/README.md).
 
 <br clear="right">
 
@@ -109,6 +117,7 @@ With archiving on, the final edited image is uploaded when you close the editor,
 screenframe                     # open the editor
 screenframe --tray              # start in the tray
 screenframe library
+screenframe settings
 screenframe capture full
 screenframe capture region --output area.png
 screenframe capture full --output shot.png --no-preview

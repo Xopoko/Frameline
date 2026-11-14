@@ -1,6 +1,9 @@
 #include "libraryclient.h"
 
+#include "libraryserver.h"
 #include "pngexport.h"
+#include "tailrelay.h"
+#include "tailscale.h"
 
 #include <QDir>
 #include <QFile>
@@ -17,6 +20,7 @@
 #include <QPointer>
 #include <QProcess>
 #include <QSaveFile>
+#include <QSet>
 #include <QTcpServer>
 #include <QTemporaryDir>
 #include <QThreadPool>
@@ -115,12 +119,26 @@ struct LibraryClient::State : QObject {
         : owner(owner),
           settingsDirectory(directory), storageKey(settings.storageKey()),
           queue(libraryQueueDirectory(settings, settingsDirectory)),
+          transport(settings.transport), peer(QHostAddress(settings.address).toString()),
           host(settings.transport == LibraryTransport::Ssh ? settings.sshHost : QString{}),
           port(settings.port), device(settings.device),
           token(settings.isConfigured() ? settings.token.toLatin1() : QByteArray{}),
           autoArchive(settings.autoArchive)
     {
         network.setProxy(QNetworkProxy::NoProxy);
+        if (transport == LibraryTransport::Local && !token.isEmpty()) {
+            const auto hosted = loadSettings(settingsDirectory).hostedLibrary;
+            if (hosted.token.toLatin1() == token && hosted.port == port)
+                managedDirectory = hosted.directory;
+        }
+        if (transport == LibraryTransport::Tailscale && !token.isEmpty()) {
+            tailscale = std::make_unique<TailscaleMonitor>();
+            relay = std::make_unique<TailRelay>(QHostAddress(peer), port, [this] {
+                return connectionError.isEmpty() ? QHostAddress(tailscale->status().sourceForPeer(peer))
+                                                 : QHostAddress{};
+            });
+            connect(tailscale.get(), &TailscaleMonitor::refreshed, this, &State::tailscaleRefreshed);
+        }
         writer.setMaxThreadCount(1);
         retry.setSingleShot(true);
         connect(&retry, &QTimer::timeout, this, [this] { pump(); });
@@ -161,6 +179,8 @@ struct LibraryClient::State : QObject {
 
     ~State() override
     {
+        for (auto *reply : activeReplies)
+            reply->disconnect(this);
         QObject::disconnect(&ssh, nullptr, this, nullptr);
         if (ssh.state() != QProcess::NotRunning) {
             ssh.kill();
@@ -192,7 +212,9 @@ struct LibraryClient::State : QObject {
 
     void status()
     {
-        emit owner.syncStatusChanged(pending(), writeError.isEmpty() ? uploadError : writeError);
+        const QString &error = writeError.isEmpty() ? (connectionError.isEmpty() ? uploadError : connectionError)
+                                                   : writeError;
+        emit owner.syncStatusChanged(pending(), error);
     }
 
     struct Write {
@@ -258,10 +280,54 @@ struct LibraryClient::State : QObject {
 
     using Ready = std::function<void(quint16, QString)>;
 
-    void ensureTunnel(Ready callback)
+    QString connectionProblem() const
+    {
+        if (!connectionError.isEmpty())
+            return connectionError;
+        if (transport == LibraryTransport::Local) {
+            QString error;
+            const auto hosted = loadSettings(settingsDirectory, &error).hostedLibrary;
+            if (!error.isEmpty())
+                return error;
+            const bool matchesHost = hosted.port == port && hosted.token.toLatin1() == token;
+            if ((!managedDirectory.isEmpty() || matchesHost) && (!matchesHost || !hosted.enabled
+                || !LibraryServer::isRunning(hosted.directory)))
+                return QStringLiteral("Open ScreenFrame on the computer that hosts the library.");
+        }
+        return {};
+    }
+
+    QString tailscaleProblem(const TailscaleStatus &status) const
+    {
+        if (status.state != TailscaleState::Ready)
+            return status.message;
+        return QStringLiteral("The library computer is not reachable in Tailscale. Check that both devices "
+                              "are connected to the same Tailscale network.");
+    }
+
+    void ensureConnection(Ready callback)
     {
         if (token.isEmpty()) {
             callback(0, QStringLiteral("This device has no shared library configuration."));
+            return;
+        }
+        const QString error = connectionProblem();
+        if (!error.isEmpty()) {
+            callback(0, error);
+            return;
+        }
+        if (tailscale) {
+            const auto status = tailscale->status();
+            if (status.canReach(peer)) {
+                if (relay->listen())
+                    callback(relay->port(), {});
+                else
+                    callback(0, QStringLiteral("Could not open the private library connection."));
+            } else {
+                if (tailWaiting.isEmpty())
+                    QTimer::singleShot(0, tailscale.get(), &TailscaleMonitor::refresh);
+                tailWaiting.append(std::move(callback));
+            }
             return;
         }
         if (host.isEmpty() || tunnelReady) {
@@ -305,6 +371,69 @@ struct LibraryClient::State : QObject {
         deliverTunnel(error);
     }
 
+    void abortRequests()
+    {
+        const QPointer<State> guard(this);
+        const auto inFlight = activeReplies.values();
+        for (auto *reply : inFlight) {
+            // A finished handler may replace this client.
+            if (!guard)
+                return;
+            if (activeReplies.contains(reply))
+                reply->abort();
+        }
+    }
+
+    void tailscaleRefreshed(const TailscaleStatus &status)
+    {
+        const auto source = status.sourceForPeer(peer);
+        const QPointer<State> guard(this);
+        if (source != tailSource || source.isEmpty()) {
+            tailSource = source;
+            relay->disconnectClients();
+            abortRequests();
+            if (!guard)
+                return;
+            network.clearConnectionCache();
+        }
+
+        const QString blocked = connectionProblem();
+        QString error = blocked;
+        if (error.isEmpty() && source.isEmpty())
+            error = tailscaleProblem(status);
+        if (!tailWaiting.isEmpty() && error.isEmpty() && !relay->listen())
+            error = QStringLiteral("Could not open the private library connection.");
+        const quint16 local = error.isEmpty() ? relay->port() : 0;
+        for (const auto &callback : std::exchange(tailWaiting, {})) {
+            if (!guard)
+                return;
+            callback(local, error);
+        }
+        if (guard && error.isEmpty() && !active && !uploadError.isEmpty()) {
+            retry.stop();
+            pump();
+        }
+    }
+
+    void track(QNetworkReply *reply)
+    {
+        activeReplies.insert(reply);
+        connect(reply, &QNetworkReply::finished, this, [this, reply] { activeReplies.remove(reply); });
+    }
+
+    QString requestProblem() const
+    {
+        const QString error = connectionProblem();
+        if (!error.isEmpty())
+            return error;
+        if (tailscale) {
+            const auto status = tailscale->status();
+            if (!status.canReach(peer))
+                return tailscaleProblem(status);
+        }
+        return {};
+    }
+
     QNetworkRequest request(quint16 local, const QString &path, const QUrlQuery &query = {}) const
     {
         QUrl url;
@@ -315,6 +444,8 @@ struct LibraryClient::State : QObject {
         url.setQuery(query);
         QNetworkRequest result(url);
         result.setRawHeader("Authorization", "Bearer " + token);
+        if (tailscale)
+            result.setRawHeader("Connection", "close");
         result.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
         result.setTransferTimeout(12000);
         return result;
@@ -324,14 +455,17 @@ struct LibraryClient::State : QObject {
                   std::function<void(Download)> callback)
     {
         const QPointer<QObject> guard(context);
-        ensureTunnel([this, path, query, limit, guard, callback = std::move(callback)](quint16 local, const QString &error) {
+        ensureConnection([this, path, query, limit, guard, callback = std::move(callback)](quint16 local, QString error) {
             if (!guard)
                 return;
+            if (error.isEmpty())
+                error = requestProblem();
             if (!error.isEmpty()) {
                 callback({{}, error});
                 return;
             }
             auto *reply = network.get(request(local, path, query));
+            track(reply);
             auto result = std::make_shared<Download>();
             auto read = [reply, result, limit] {
                 if (!result->error.isEmpty())
@@ -384,7 +518,7 @@ struct LibraryClient::State : QObject {
             retry.start(3000);
             return;
         }
-        ensureTunnel([this](quint16 local, const QString &error) {
+        ensureConnection([this](quint16 local, const QString &error) {
             if (!error.isEmpty()) {
                 uploadFinished(error);
                 return;
@@ -399,6 +533,11 @@ struct LibraryClient::State : QObject {
             active.reset();
             activeId.clear();
             status();
+            return;
+        }
+        const QString error = requestProblem();
+        if (!error.isEmpty()) {
+            uploadFinished(error);
             return;
         }
         const QDir folder(QDir(queue).filePath(activeId));
@@ -426,6 +565,7 @@ struct LibraryClient::State : QObject {
             uploadRequest.setRawHeader("X-ScreenFrame-Height", QByteArray::number(object.value(QStringLiteral("height")).toInt()));
         }
         auto *reply = network.put(uploadRequest, file.get());
+        track(reply);
         auto *opened = file.release();
         opened->setParent(reply);
         connect(reply, &QNetworkReply::finished, this, [this, reply, opened, local, thumbnail] {
@@ -464,14 +604,22 @@ struct LibraryClient::State : QObject {
     const QString settingsDirectory;
     const QString storageKey;
     const QString queue;
+    const LibraryTransport transport;
+    const QString peer;
     const QString host;
     const int port;
     const QString device;
     const QByteArray token;
     const bool autoArchive;
+    QString managedDirectory;
     QThreadPool writer;
     QList<Write> writes;
     QNetworkAccessManager network;
+    std::unique_ptr<TailscaleMonitor> tailscale;
+    std::unique_ptr<TailRelay> relay;
+    QString tailSource;
+    QList<Ready> tailWaiting;
+    QSet<QNetworkReply *> activeReplies;
     QProcess ssh;
     QTimer timeout;
     QTimer retry;
@@ -483,6 +631,7 @@ struct LibraryClient::State : QObject {
     QString activeId;
     QString writeError;
     QString uploadError;
+    QString connectionError;
 };
 
 LibraryClient::LibraryClient(const LibrarySettings &settings, const QString &settingsDirectory)
@@ -494,6 +643,8 @@ int LibraryClient::pendingCount() const { return d->pending(); }
 
 void LibraryClient::start()
 {
+    if (d->tailscale)
+        QTimer::singleShot(0, d->tailscale.get(), &TailscaleMonitor::refresh);
     if (isConfigured() && d->autoArchive) {
         d->status();
         d->pump();
@@ -503,6 +654,26 @@ void LibraryClient::start()
         connect(poll, &QTimer::timeout, d.get(), [this] { d->pump(); });
         poll->start();
     }
+}
+
+void LibraryClient::setConnectionError(const QString &error)
+{
+    if (d->connectionError == error)
+        return;
+    d->connectionError = error;
+    const QPointer<State> guard(d.get());
+    if (!error.isEmpty()) {
+        if (d->relay)
+            d->relay->disconnectClients();
+        d->abortRequests();
+        if (!guard)
+            return;
+        d->network.clearConnectionCache();
+    } else {
+        d->uploadError.clear();
+        QTimer::singleShot(0, d.get(), [state = d.get()] { state->pump(); });
+    }
+    d->status();
 }
 
 void LibraryClient::enqueue(QImage image, const QString &kind, const QDateTime &capturedAt)

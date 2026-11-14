@@ -6,6 +6,8 @@
 #include "librarywindow.h"
 #include "settings.h"
 #include "settingswindow.h"
+#include "controls.h"
+#include "tailscale.h"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -209,9 +211,40 @@ void settingsShots()
         present(settings, settings.size());
         shoot(settings, QStringLiteral("10-settings-standalone"));
     }
+    {
+        SettingsWindow settings(AppSettings{});
+        settings.findChild<Segmented *>(QStringLiteral("libraryConnection"))->setCurrent(1);
+        settings.findChild<QLineEdit *>(QStringLiteral("libraryDevice"))->setText(QStringLiteral("Home computer"));
+        present(settings, settings.size());
+        shoot(settings, QStringLiteral("15-settings-create"));
+        settings.findChild<Segmented *>(QStringLiteral("libraryConnection"))->setCurrent(2);
+        TailscaleStatus missing;
+        missing.state = TailscaleState::Missing;
+        missing.message = QStringLiteral("Install Tailscale on both computers and sign in with the same account.");
+        settings.setTailscaleStatus(missing);
+        shoot(settings, QStringLiteral("16-settings-connect"));
+    }
+    {
+        AppSettings hosting;
+        hosting.hostedLibrary = {true, QDir::home().filePath(QStringLiteral(".screenframe/library")),
+                                 QString(43, QLatin1Char('a')), defaultHostedLibraryPort, true};
+        hosting.library.token = hosting.hostedLibrary.token;
+        hosting.library.port = hosting.hostedLibrary.port;
+        hosting.library.device = QStringLiteral("Home computer");
+        hosting.library.autoArchive = true;
+        SettingsWindow settings(hosting);
+        TailscaleStatus connected;
+        connected.state = TailscaleState::Ready;
+        connected.localAddress = QStringLiteral("100.100.100.100");
+        connected.message = QStringLiteral("Tailscale is connected.");
+        settings.setTailscaleStatus(connected);
+        settings.setHostedStatus(true, connected.localAddress);
+        present(settings, settings.size());
+        shoot(settings, QStringLiteral("17-settings-host-ready"));
+    }
     AppSettings configured;
     configured.library.transport = LibraryTransport::Ssh;
-    configured.library.sshHost = QStringLiteral("ubuntu-nuc");
+    configured.library.sshHost = QStringLiteral("library-server");
     configured.library.device = QStringLiteral("Work laptop");
     configured.library.token = QString(32, QLatin1Char('a'));
     configured.library.autoArchive = true;

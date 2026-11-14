@@ -4,7 +4,7 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 14.4 CACHE STRING "Minimum macOS version")
 endif()
 
-project(ScreenFrame VERSION 0.2.0 LANGUAGES CXX)
+project(ScreenFrame VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +35,8 @@ add_library(screenframe_core STATIC
     src/editor.h
     src/libraryclient.cpp
     src/libraryclient.h
+    src/libraryserver.cpp
+    src/libraryserver.h
     src/librarywindow.cpp
     src/librarywindow.h
     src/pngexport.cpp
@@ -45,6 +47,14 @@ add_library(screenframe_core STATIC
     src/settings.h
     src/settingswindow.cpp
     src/settingswindow.h
+    src/singleinstance.cpp
+    src/singleinstance.h
+    src/tailscale.cpp
+    src/tailscale.h
+    src/tailrelay.cpp
+    src/tailrelay.h
+    src/platform/autostart.cpp
+    src/platform/autostart.h
     src/shortcuts.cpp
     src/shortcuts.h
     src/theme.cpp
@@ -55,7 +65,7 @@ target_link_libraries(screenframe_core PUBLIC Qt6::Widgets PRIVATE Qt6::Network 
 
 if(WIN32)
     target_sources(screenframe_core PRIVATE src/platform/windows_shortcuts.cpp src/platform/windows_shortcuts.h)
-    target_link_libraries(screenframe_core PRIVATE user32 shell32 gdi32 dwmapi)
+    target_link_libraries(screenframe_core PRIVATE user32 shell32 gdi32 dwmapi ws2_32 iphlpapi)
 elseif(APPLE)
     enable_language(OBJCXX)
     set_target_properties(screenframe_core PROPERTIES OBJCXX_STANDARD 20 OBJCXX_STANDARD_REQUIRED ON)
@@ -160,6 +170,12 @@ if(BUILD_TESTING)
     target_link_libraries(screenframe_shots PRIVATE screenframe_core Qt6::Test)
     add_test(NAME screenframe_components COMMAND screenframe_tests)
     set_tests_properties(screenframe_components PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    foreach(component autostart librarysettings libraryserver singleinstance tailscale tailrelay settingswindow)
+        add_executable(screenframe_${component}_tests tests/${component}_tests.cpp)
+        target_link_libraries(screenframe_${component}_tests PRIVATE screenframe_core Qt6::Test Qt6::Network)
+        add_test(NAME screenframe_${component} COMMAND screenframe_${component}_tests)
+        set_tests_properties(screenframe_${component} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endforeach()
     add_test(NAME screenframe_cli_help COMMAND screenframe --help)
     add_test(NAME screenframe_cli_rejects_invalid_options COMMAND screenframe capture full --no-preview)
     set_tests_properties(screenframe_cli_rejects_invalid_options PROPERTIES WILL_FAIL TRUE)
