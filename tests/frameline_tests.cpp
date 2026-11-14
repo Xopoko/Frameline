@@ -15,6 +15,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimeZone>
@@ -55,7 +56,7 @@ QPushButton *buttonWithText(QWidget &window, const QString &text)
 
 } // namespace
 
-class ScreenFrameTests final : public QObject {
+class FramelineTests final : public QObject {
     Q_OBJECT
 
 private slots:
@@ -68,12 +69,15 @@ private slots:
     void settingsDialog();
     void standaloneLibrary();
     void libraryRejectsStaleSettings();
+#if !defined(Q_OS_WIN)
+    void settingsMoveFromScreenFrame();
+#endif
 #if defined(Q_OS_WIN)
     void windowsRegionKey();
 #endif
 };
 
-void ScreenFrameTests::annotationRendering()
+void FramelineTests::annotationRendering()
 {
     QImage source(96, 72, QImage::Format_RGB32);
     for (int y = 0; y < source.height(); ++y) {
@@ -101,7 +105,7 @@ void ScreenFrameTests::annotationRendering()
     QVERIFY2(edited.pixelColor(90, 67) == source.pixelColor(90, 67), "Unmarked pixels must stay intact.");
 }
 
-void ScreenFrameTests::annotationDamage()
+void FramelineTests::annotationDamage()
 {
     QImage source(110, 80, QImage::Format_RGB32);
     source.fill(Qt::white);
@@ -126,7 +130,7 @@ void ScreenFrameTests::annotationDamage()
     }
 }
 
-void ScreenFrameTests::pngExport()
+void FramelineTests::pngExport()
 {
     const QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -148,7 +152,7 @@ void ScreenFrameTests::pngExport()
              "Exporting a premultiplied image must preserve straight-alpha pixels.");
 }
 
-void ScreenFrameTests::settingsValidation()
+void FramelineTests::settingsValidation()
 {
     const LibrarySettings empty;
     const LibrarySettings valid = validLibrary();
@@ -204,7 +208,7 @@ void ScreenFrameTests::settingsValidation()
              "Turning off automatic archiving must not make a partial setup valid.");
 }
 
-void ScreenFrameTests::settingsDestinationKey()
+void FramelineTests::settingsDestinationKey()
 {
     const LibrarySettings original = validLibrary();
     const QString key = original.storageKey();
@@ -232,7 +236,7 @@ void ScreenFrameTests::settingsDestinationKey()
     QVERIFY2(candidate.storageKey() != key, "A local service must use a separate queue from an SSH destination.");
 }
 
-void ScreenFrameTests::settingsRoundTrip()
+void FramelineTests::settingsRoundTrip()
 {
     const QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -283,7 +287,7 @@ void ScreenFrameTests::settingsRoundTrip()
     }
 }
 
-void ScreenFrameTests::settingsDialog()
+void FramelineTests::settingsDialog()
 {
     SettingsWindow window(AppSettings{});
     window.show();
@@ -329,7 +333,7 @@ void ScreenFrameTests::settingsDialog()
              "Valid SSH settings should save with the selected connection.");
 }
 
-void ScreenFrameTests::standaloneLibrary()
+void FramelineTests::standaloneLibrary()
 {
     LibraryClient client(LibrarySettings{});
     LibraryWindow window(client);
@@ -342,7 +346,7 @@ void ScreenFrameTests::standaloneLibrary()
     QVERIFY2(requested, "Set up library must open the app's settings flow.");
 }
 
-void ScreenFrameTests::libraryRejectsStaleSettings()
+void FramelineTests::libraryRejectsStaleSettings()
 {
     const QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -377,8 +381,39 @@ void ScreenFrameTests::libraryRejectsStaleSettings()
              "An older Library instance must not queue a new capture after the destination changes.");
 }
 
+#if !defined(Q_OS_WIN)
+void FramelineTests::settingsMoveFromScreenFrame()
+{
+    const QTemporaryDir home;
+    QVERIFY(home.isValid());
+    const QByteArray previousHome = qgetenv("HOME");
+    qputenv("HOME", QFile::encodeName(home.path()));
+    const auto restoreHome = qScopeGuard([&] { qputenv("HOME", previousHome); });
+
+    const QDir root(home.path());
+    const QString legacy = root.filePath(QStringLiteral(".screenframe"));
+    AppSettings saved;
+    saved.hostedLibrary.enabled = true;
+    saved.hostedLibrary.directory = QDir(legacy).filePath(QStringLiteral("library"));
+    saved.hostedLibrary.token = QString(32, QLatin1Char('b'));
+    QString error;
+    QVERIFY2(saveSettings(saved, legacy, &error), qPrintable(error));
+    QVERIFY(QDir(legacy).mkpath(QStringLiteral("queues/key")) && QDir(legacy).mkpath(QStringLiteral("library")));
+
+    const QString directory = defaultSettingsDirectory();
+    QVERIFY2(directory == root.filePath(QStringLiteral(".frameline")), "Settings must live in the Frameline folder after the move.");
+    QVERIFY2(QFileInfo(QDir(directory).filePath(QStringLiteral("queues/key"))).isDir()
+                 && QFileInfo(QDir(directory).filePath(QStringLiteral("library"))).isDir() && !QFileInfo::exists(legacy),
+             "Moving from ScreenFrame must carry settings, queued uploads and the library along.");
+    const AppSettings loaded = loadSettings(directory, &error);
+    QVERIFY2(error.isEmpty() && loaded.hostedLibrary.directory == QDir(directory).filePath(QStringLiteral("library")),
+             "A library kept in the old settings folder must be found in the new one.");
+    QVERIFY2(defaultSettingsDirectory() == directory, "The move must happen only once.");
+}
+#endif
+
 #if defined(Q_OS_WIN)
-void ScreenFrameTests::windowsRegionKey()
+void FramelineTests::windowsRegionKey()
 {
     using Decision = WindowsRegionKeyState::Decision;
     WindowsRegionKeyState key;
@@ -398,5 +433,5 @@ void ScreenFrameTests::windowsRegionKey()
 }
 #endif
 
-QTEST_MAIN(ScreenFrameTests)
-#include "screenframe_tests.moc"
+QTEST_MAIN(FramelineTests)
+#include "frameline_tests.moc"

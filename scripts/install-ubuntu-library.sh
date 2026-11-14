@@ -8,7 +8,9 @@ if [[ $# != 0 || $EUID == 0 ]]; then
 fi
 
 source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../server" && pwd -P)
-source_file="$source_dir/screenframe_server.py"
+source_file="$source_dir/frameline_server.py"
+# Frameline was called ScreenFrame. The installed file, folders and service keep that name so an
+# existing library upgrades in place instead of starting a second service on the same port.
 data_dir="$HOME/.local/state/screenframe-library"
 install_dir="$HOME/.local/share/screenframe-library"
 unit_dir="$HOME/.config/systemd/user"
@@ -21,7 +23,7 @@ port=18745
 systemctl --user show-environment >/dev/null
 for path in "$data_dir" "$install_dir" "$install_dir/releases"; do
     if [[ -L "$path" || ( -e "$path" && ( ! -d "$path" || ! -O "$path" ) ) ]]; then
-        echo "The ScreenFrame library path is not an owner-managed directory: $path" >&2
+        echo "The Frameline library path is not an owner-managed directory: $path" >&2
         exit 1
     fi
 done
@@ -34,7 +36,7 @@ trap 'rm -rf -- "$work"' EXIT
 
 cat >"$work/$unit_name" <<UNIT
 [Unit]
-Description=ScreenFrame private screenshot library
+Description=Frameline private screenshot library
 
 [Service]
 ExecStart=/usr/bin/python3 "%h/.local/share/screenframe-library/current/screenframe_server.py" --data-dir "%h/.local/state/screenframe-library" --token-file "%h/.local/state/screenframe-library/token" --port $port
@@ -60,15 +62,15 @@ old_release=
 if [[ -L "$current" ]]; then
     old_release=$(readlink "$current")
     if [[ ! "$old_release" =~ ^releases/[a-f0-9]{64}$ || ! -f "$install_dir/$old_release/screenframe_server.py" ]]; then
-        echo "The current ScreenFrame library release is invalid." >&2
+        echo "The current Frameline library release is invalid." >&2
         exit 1
     fi
 elif [[ -e "$current" ]]; then
-    echo "The current ScreenFrame library path is not a release link." >&2
+    echo "The current Frameline library path is not a release link." >&2
     exit 1
 fi
 if [[ "$first_install" != true && -z "$old_release" ]]; then
-    echo "The existing ScreenFrame library service has no current release." >&2
+    echo "The existing Frameline library service has no current release." >&2
     exit 1
 fi
 if [[ "$first_install" == true ]] && ss -H -ltn "sport = :$port" | grep -q .; then
@@ -78,7 +80,7 @@ fi
 
 if [[ ! -e "$token_file" && ! -L "$token_file" ]]; then
     if [[ "$first_install" != true ]]; then
-        echo "The existing ScreenFrame library token is missing." >&2
+        echo "The existing Frameline library token is missing." >&2
         exit 1
     fi
     /usr/bin/python3 - "$token_file" <<'PY'
@@ -96,7 +98,7 @@ with tempfile.NamedTemporaryFile(mode="w", dir=os.path.dirname(target)) as file:
 PY
 fi
 if [[ ! -f "$token_file" || -L "$token_file" || ! -O "$token_file" || $(stat -c '%a' "$token_file") != 600 ]]; then
-    echo "The ScreenFrame library token must be an owner-only regular file (0600)." >&2
+    echo "The Frameline library token must be an owner-only regular file (0600)." >&2
     exit 1
 fi
 
@@ -108,7 +110,7 @@ if [[ ! -d "$install_dir/$release" ]]; then
     mv -T "$work/release" "$install_dir/$release"
 fi
 if ! cmp -s "$source_file" "$install_dir/$release/screenframe_server.py"; then
-    echo "The ScreenFrame library release contents do not match." >&2
+    echo "The Frameline library release contents do not match." >&2
     exit 1
 fi
 
@@ -152,7 +154,7 @@ if [[ "$first_install" == true ]]; then
         systemctl --user disable --now "$unit_name" || true
         rm -f -- "$unit_file" "$current"
         systemctl --user daemon-reload || true
-        echo "The ScreenFrame library could not start. Its token and data have been preserved." >&2
+        echo "The Frameline library could not start. Its token and data have been preserved." >&2
         exit 1
     fi
 elif [[ "$old_release" != "$release" ]]; then
@@ -160,14 +162,14 @@ elif [[ "$old_release" != "$release" ]]; then
     if [[ "$was_active" == true ]] && ! { systemctl --user restart "$unit_name" && wait_for_health; }; then
         set_release "$old_release"
         systemctl --user restart "$unit_name" || true
-        echo "The ScreenFrame library update failed. The previous release was restored." >&2
+        echo "The Frameline library update failed. The previous release was restored." >&2
         exit 1
     fi
 fi
 
 if systemctl --user is-active --quiet "$unit_name"; then
     wait_for_health
-    echo "ScreenFrame library is running on 127.0.0.1:$port."
+    echo "Frameline library is running on 127.0.0.1:$port."
 else
-    echo "ScreenFrame library files were updated. The service remains stopped."
+    echo "Frameline library files were updated. The service remains stopped."
 fi

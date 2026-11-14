@@ -54,12 +54,12 @@ std::optional<QJsonObject> readObject(const QString &path, QString *error)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly) || file.size() > 8192) {
-        report(error, QStringLiteral("Could not read ScreenFrame settings."));
+        report(error, QStringLiteral("Could not read Frameline settings."));
         return {};
     }
     const auto document = QJsonDocument::fromJson(file.readAll());
     if (!document.isObject()) {
-        report(error, QStringLiteral("ScreenFrame settings are not valid JSON."));
+        report(error, QStringLiteral("Frameline settings are not valid JSON."));
         return {};
     }
     return document.object();
@@ -170,7 +170,7 @@ QString LibrarySettings::validationError() const
     if (transport == LibraryTransport::Local && !sshHost.isEmpty())
         return QStringLiteral("A local connection does not use an SSH host.");
     if (transport == LibraryTransport::Tailscale && (!sshHost.isEmpty() || !isTailscaleAddress(address)))
-        return QStringLiteral("Paste a ScreenFrame connection code with a valid Tailscale address.");
+        return QStringLiteral("Paste a Frameline connection code with a valid Tailscale address.");
     if (transport != LibraryTransport::Tailscale && !address.isEmpty())
         return QStringLiteral("A Tailscale address requires a Tailscale connection.");
     if (!validToken(token))
@@ -211,9 +211,23 @@ QString HostedLibrarySettings::validationError() const
     return {};
 }
 
-QString defaultSettingsDirectory()
+static QString legacySettingsDirectory()
 {
     return QDir::home().filePath(QStringLiteral(".screenframe"));
+}
+
+QString defaultSettingsDirectory()
+{
+    // Frameline was called ScreenFrame. Move its folder once, with settings, queued uploads and a
+    // library kept there. If the move fails, for example while an older process holds a file open,
+    // keep using the old folder.
+    const QString current = QDir::home().filePath(QStringLiteral(".frameline"));
+    const QString legacy = legacySettingsDirectory();
+    if (!QFileInfo::exists(current) && QFileInfo(legacy).isDir() && !QDir().rename(legacy, current)
+        && !QFileInfo::exists(current)) {
+        return legacy;
+    }
+    return current;
 }
 
 QString defaultHostedLibraryDirectory(const QString &settingsDirectory)
@@ -248,6 +262,7 @@ QString libraryConnectionCode(const LibrarySettings &settings)
         return {};
     const QByteArray payload = address.toLatin1() + '\n' + QByteArray::number(settings.port) + '\n'
         + settings.token.toLatin1();
+    // "SF1-" stands for the ScreenFrame name; codes already shared keep working.
     return QStringLiteral("SF1-") + QString::fromLatin1(payload.toBase64(QByteArray::Base64UrlEncoding
                                                                         | QByteArray::OmitTrailingEquals));
 }
@@ -255,7 +270,7 @@ QString libraryConnectionCode(const LibrarySettings &settings)
 std::optional<LibrarySettings> librarySettingsFromConnectionCode(const QString &code, const QString &device,
                                                                QString *error)
 {
-    const QString invalid = QStringLiteral("Paste a valid ScreenFrame connection code.");
+    const QString invalid = QStringLiteral("Paste a valid Frameline connection code.");
     report(error, invalid);
     if (code.size() > 512)
         return {};
@@ -287,6 +302,20 @@ std::optional<LibrarySettings> librarySettingsFromConnectionCode(const QString &
     return settings;
 }
 
+// A library folder inside the old ScreenFrame settings folder moved with it to the Frameline one.
+static QString movedFromLegacyDirectory(const QString &path)
+{
+    if (path.isEmpty())
+        return path;
+    const QString legacy = QDir::cleanPath(legacySettingsDirectory());
+    const QString current = QDir::cleanPath(QDir::home().filePath(QStringLiteral(".frameline")));
+    const QString clean = QDir::cleanPath(QDir::fromNativeSeparators(path));
+    const bool inside = clean == legacy || clean.startsWith(legacy + u'/');
+    if (!inside || QFileInfo::exists(legacy) || !QFileInfo(current).isDir())
+        return path;
+    return QDir::toNativeSeparators(current + clean.mid(legacy.size()));
+}
+
 AppSettings loadSettings(const QString &directory, QString *error)
 {
     report(error, {});
@@ -298,7 +327,7 @@ AppSettings loadSettings(const QString &directory, QString *error)
         return {};
     if (object->value(QStringLiteral("schemaVersion")).toInt() != 1
         || !object->value(QStringLiteral("library")).isObject()) {
-        report(error, QStringLiteral("Unsupported ScreenFrame settings format."));
+        report(error, QStringLiteral("Unsupported Frameline settings format."));
         return {};
     }
     QString readError;
@@ -312,7 +341,8 @@ AppSettings loadSettings(const QString &directory, QString *error)
         report(error, readError);
         return {};
     }
-    const AppSettings settings{library, object->value(QStringLiteral("useSystemRegionShortcut")).toBool(), hosted};
+    AppSettings settings{library, object->value(QStringLiteral("useSystemRegionShortcut")).toBool(), hosted};
+    settings.hostedLibrary.directory = movedFromLegacyDirectory(settings.hostedLibrary.directory);
     readError = hostedConnectionError(settings);
     report(error, readError);
     return readError.isEmpty() ? settings : AppSettings{};
@@ -331,12 +361,12 @@ bool saveSettings(const AppSettings &settings, const QString &directory, QString
     if (!validation.isEmpty())
         return false;
     if (!QDir().mkpath(directory)) {
-        report(error, QStringLiteral("Could not create the ScreenFrame settings folder."));
+        report(error, QStringLiteral("Could not create the Frameline settings folder."));
         return false;
     }
 #ifndef Q_OS_WIN
     if (!QFile::setPermissions(directory, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner)) {
-        report(error, QStringLiteral("Could not protect the ScreenFrame settings folder."));
+        report(error, QStringLiteral("Could not protect the Frameline settings folder."));
         return false;
     }
 #endif
@@ -366,7 +396,7 @@ bool saveSettings(const AppSettings &settings, const QString &directory, QString
         || !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)
 #endif
         || file.write(bytes) != bytes.size() || !file.commit()) {
-        report(error, QStringLiteral("Could not save ScreenFrame settings. %1").arg(file.errorString()));
+        report(error, QStringLiteral("Could not save Frameline settings. %1").arg(file.errorString()));
         return false;
     }
     return true;

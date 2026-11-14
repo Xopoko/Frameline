@@ -1,5 +1,5 @@
-// Developer tool: renders ScreenFrame's windows to PNG files for visual review.
-// Usage: screenframe_shots <output-directory> [library-port library-token]
+// Developer tool: renders Frameline's windows to PNG files for visual review.
+// Usage: frameline_shots <output-directory> [library-port library-token]
 #include "editor.h"
 #include "regionselector.h"
 #include "libraryclient.h"
@@ -226,7 +226,7 @@ void settingsShots()
     }
     {
         AppSettings hosting;
-        hosting.hostedLibrary = {true, QDir::home().filePath(QStringLiteral(".screenframe/library")),
+        hosting.hostedLibrary = {true, QDir::home().filePath(QStringLiteral(".frameline/library")),
                                  QString(43, QLatin1Char('a')), defaultHostedLibraryPort, true};
         hosting.library.token = hosting.hostedLibrary.token;
         hosting.library.port = hosting.hostedLibrary.port;
@@ -487,10 +487,10 @@ void editorDemo(const QString &directory)
         button->click();
     }
     // End while the confirmation is still showing; the composer holds the last frame.
-    record.hold(editor, 10);
+    record.hold(editor, 5);
 }
 
-// The overlay needs the offscreen platform, so it renders in a separate run: screenframe_shots <dir> --region
+// The overlay needs the offscreen platform, so it renders in a separate run: frameline_shots <dir> --region
 void regionShots()
 {
     RegionSelector::start({CaptureFrame{sampleCapture(QSize(1600, 1000)), nullptr}}, [](QImage) {});
@@ -524,7 +524,7 @@ int main(int argc, char **argv)
     QApplication app(argc, argv);
     const QStringList arguments = app.arguments();
     if (arguments.size() < 2) {
-        qWarning("Usage: screenframe_shots <output-directory> [library-port library-token]");
+        qWarning("Usage: frameline_shots <output-directory> [library-port library-token]");
         return 1;
     }
     outputDirectory = arguments.at(1);

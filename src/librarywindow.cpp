@@ -452,7 +452,7 @@ enum class StateAction { None, Setup, Retry };
 struct LibraryWindow::Ui {
     Ui(LibraryWindow &owner, LibraryClient &transport) : window(owner), client(transport)
     {
-        window.setWindowTitle(QStringLiteral("Library — ScreenFrame"));
+        window.setWindowTitle(QStringLiteral("Library — Frameline"));
         window.setMinimumSize(560, 420);
         window.resize(980, 700);
 
@@ -733,7 +733,7 @@ struct LibraryWindow::Ui {
             refreshButton->setEnabled(false);
             listCaption->clear();
             setListState(Icon::Library, QStringLiteral("Collect screenshots from all your devices"),
-                         QStringLiteral("Connect ScreenFrame to a library you host. Screenshots from every connected "
+                         QStringLiteral("Connect Frameline to a library you host. Screenshots from every connected "
                                         "device appear here, ready to save again."),
                          StateAction::Setup);
             return;
@@ -950,7 +950,7 @@ struct LibraryWindow::Ui {
             }
             if (!error.isEmpty() || image.isNull()) {
                 viewerState->set(Icon::Warning, QStringLiteral("Couldn’t open this screenshot"),
-                                 error.isEmpty() ? QStringLiteral("The library returned an image ScreenFrame can’t read.") : error,
+                                 error.isEmpty() ? QStringLiteral("The library returned an image Frameline can’t read.") : error,
                                  QStringLiteral("Try again"));
                 return;
             }

@@ -40,7 +40,7 @@ QStringList commandLine(int argc, char **argv)
 
 int argumentError(const QString &message)
 {
-    QTextStream(stderr) << "screenframe: " << message << "\nUse --help for usage.\n";
+    QTextStream(stderr) << "frameline: " << message << "\nUse --help for usage.\n";
     return 1;
 }
 
@@ -48,17 +48,17 @@ int argumentError(const QString &message)
 
 int main(int argc, char **argv)
 {
-    QCoreApplication::setApplicationName(QStringLiteral("ScreenFrame"));
-    QCoreApplication::setOrganizationName(QStringLiteral("ScreenFrame"));
-    QCoreApplication::setApplicationVersion(QStringLiteral(SCREENFRAME_VERSION));
+    QCoreApplication::setApplicationName(QStringLiteral("Frameline"));
+    QCoreApplication::setOrganizationName(QStringLiteral("Frameline"));
+    QCoreApplication::setApplicationVersion(QStringLiteral(FRAMELINE_VERSION));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral(
         "Capture and annotate screenshots.\n\n"
-        "screenframe [--tray]\n"
-        "screenframe library\n"
-        "screenframe settings\n"
-        "screenframe capture full|region [--output <file.png>] [--no-preview]"));
+        "frameline [--tray]\n"
+        "frameline library\n"
+        "frameline settings\n"
+        "frameline capture full|region [--output <file.png>] [--no-preview]"));
     const auto help = parser.addHelpOption();
     const auto version = parser.addVersionOption();
     parser.addPositionalArgument(QStringLiteral("command"), QStringLiteral("Open the library, settings or capture the screen."),
@@ -126,9 +126,9 @@ int main(int argc, char **argv)
 #endif
     QLocale::setDefault(QLocale(QLocale::English));
     QApplication app(argc, argv);
-    QApplication::setApplicationDisplayName(QStringLiteral("ScreenFrame"));
-    QApplication::setDesktopFileName(QStringLiteral("io.github.xopoko.ScreenFrame"));
-    QApplication::setWindowIcon(QIcon(QStringLiteral(":/screenframe.png")));
+    QApplication::setApplicationDisplayName(QStringLiteral("Frameline"));
+    QApplication::setDesktopFileName(QStringLiteral("io.github.xopoko.Frameline"));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/frameline.png")));
 
     std::unique_ptr<SingleInstance> instance;
     if (!capture) {
@@ -149,7 +149,7 @@ int main(int argc, char **argv)
         }
     }
 
-    ScreenFrameApplication controller(std::move(options));
+    FramelineApplication controller(std::move(options));
     if (instance) {
         QObject::connect(instance.get(), &SingleInstance::activationRequested, &controller,
                          [&controller](SingleInstance::Request request) {

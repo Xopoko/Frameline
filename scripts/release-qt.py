@@ -83,7 +83,7 @@ def prepare_source(directory):
     with tempfile.TemporaryDirectory(dir=directory) as work:
         subprocess.run(["cmake", "-E", "tar", "xf", str(archive)], cwd=work, check=True)
         stage = Path(work) / QT_SOURCE
-        # Keep Git from discovering an enclosing ScreenFrame checkout when applying Qt paths.
+        # Keep Git from discovering an enclosing Frameline checkout when applying Qt paths.
         environment = {**os.environ, "GIT_CEILING_DIRECTORIES": Path(work).as_posix()}
         for patch, _ in patches:
             subprocess.run(["git", "-c", "core.autocrlf=false", "apply", "--", str(patch)],
@@ -97,7 +97,7 @@ def archive_source(directory, output):
         verify(path, digest)
 
     instructions = (
-        f"# ScreenFrame's Qt Base {QT_VERSION} source\n\n"
+        f"# Frameline's Qt Base {QT_VERSION} source\n\n"
         "The upstream archive and all Qt patches used to build the bundled shared libraries are included.\n"
         "The source preparation script verifies the included inputs and applies the patches in dependency order.\n\n"
         "From this directory, run `python scripts/release-qt.py source .`.\n"
@@ -108,7 +108,7 @@ def archive_source(directory, output):
     )
     manifest = "".join(f"{digest}  {path.relative_to(directory).as_posix()}\n" for path, digest in inputs)
     output.mkdir(parents=True, exist_ok=True)
-    filename = f"qtbase-{QT_VERSION}-screenframe-source.tar.xz"
+    filename = f"qtbase-{QT_VERSION}-frameline-source.tar.xz"
     with tempfile.TemporaryDirectory(dir=output) as work:
         bundle = Path(work) / filename
         with tarfile.open(bundle, "w:xz", preset=0) as archive:

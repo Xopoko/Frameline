@@ -15,7 +15,7 @@
 #include <QtTest>
 
 namespace {
-const auto token = QStringLiteral("screenframe-test-token-1234567890");
+const auto token = QStringLiteral("frameline-test-token-123456789012");
 const auto root = QStringLiteral("/v1/screenshots");
 const auto firstId = QStringLiteral("11111111-1111-1111-1111-111111111111");
 const auto secondId = QStringLiteral("22222222-2222-2222-2222-222222222222");

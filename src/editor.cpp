@@ -353,7 +353,7 @@ public:
     explicit Brand(QWidget *parent) : QWidget(parent)
     {
         setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        setAccessibleName(QStringLiteral("ScreenFrame"));
+        setAccessibleName(QStringLiteral("Frameline"));
     }
 
     void setShowsName(bool value)
@@ -385,11 +385,11 @@ protected:
     }
 
 private:
-    static QString text() { return QStringLiteral("ScreenFrame"); }
+    static QString text() { return QStringLiteral("Frameline"); }
     bool showsName = true;
 };
 
-// The empty editor: what ScreenFrame is for, framed by the viewfinder corners of its icon.
+// The empty editor: what Frameline is for, framed by the viewfinder corners of its icon.
 class LauncherPage final : public QWidget {
 public:
     using QWidget::QWidget;
@@ -572,7 +572,7 @@ struct UndoPatch {
 struct EditorWindow::Ui {
     explicit Ui(EditorWindow &window) : window(window)
     {
-        window.setWindowTitle(QStringLiteral("ScreenFrame[*]"));
+        window.setWindowTitle(QStringLiteral("Frameline[*]"));
         window.setMinimumSize(720, 500);
         window.resize(1180, 780);
         root = new QWidget(&window);
@@ -743,9 +743,9 @@ struct EditorWindow::Ui {
         stack->addSpacing(22);
 
 #ifdef Q_OS_MACOS
-        const QString tip = QStringLiteral("The shortcuts work in any app while ScreenFrame is in the menu bar.");
+        const QString tip = QStringLiteral("The shortcuts work in any app while Frameline is in the menu bar.");
 #else
-        const QString tip = QStringLiteral("The shortcuts work in any app while ScreenFrame is running.");
+        const QString tip = QStringLiteral("The shortcuts work in any app while Frameline is running.");
 #endif
         shortcutTip = theme::label(tip, "caption", content);
         shortcutTip->setAlignment(Qt::AlignCenter);

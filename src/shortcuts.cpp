@@ -172,9 +172,9 @@ private:
     {
         return systemRegion_
             ? QStringLiteral("In your desktop keyboard settings, assign Super+S to "
-                 "screenframe capture region. Free the shortcut first if it is already in use.")
+                 "frameline capture region. Free the shortcut first if it is already in use.")
             : QStringLiteral("In your desktop keyboard settings, assign Ctrl+Alt+Shift+1 and Ctrl+Alt+Shift+2 "
-                 "to screenframe capture full and screenframe capture region.");
+                 "to frameline capture full and frameline capture region.");
     }
 
     GlobalShortcuts &owner_;
@@ -411,11 +411,11 @@ public:
 #if defined(Q_OS_MACOS)
         if (systemRegion_ && !registered[1]) {
             warning = QStringLiteral("⌘⇧5 is unavailable. Disable Screenshot and recording options in System Settings → "
-                         "Keyboard → Keyboard Shortcuts → Screenshots, then restart ScreenFrame.");
+                         "Keyboard → Keyboard Shortcuts → Screenshots, then restart Frameline.");
         }
 #endif
         if (warning.isEmpty() && (!registered[0] || !registered[1])) {
-            warning = QStringLiteral("Some shortcuts could not be registered. You can still capture from the ScreenFrame window.");
+            warning = QStringLiteral("Some shortcuts could not be registered. You can still capture from the Frameline window.");
         }
         emit owner_.statusChanged(registered[0], registered[1], warning);
     }

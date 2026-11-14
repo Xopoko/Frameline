@@ -23,7 +23,7 @@ bool isWayland()
 
 QString token()
 {
-    return QStringLiteral("screenframe_") + QUuid::createUuid().toString(QUuid::Id128);
+    return QStringLiteral("frameline_") + QUuid::createUuid().toString(QUuid::Id128);
 }
 
 QDBusConnection connection()

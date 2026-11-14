@@ -27,9 +27,9 @@ jobs:
       - name: Read version
         shell: bash
         run: |
-          version=$(sed -n 's/^project(ScreenFrame VERSION \([0-9.]*\) LANGUAGES CXX)$/\1/p' CMakeLists.txt)
+          version=$(sed -n 's/^project(Frameline VERSION \([0-9.]*\) LANGUAGES CXX)$/\1/p' CMakeLists.txt)
           test -n "$version"
-          echo "SCREENFRAME_VERSION=$version" >> "$GITHUB_ENV"
+          echo "FRAMELINE_VERSION=$version" >> "$GITHUB_ENV"
       - name: Restore Qt SDK
         id: qt-cache
         if: matrix.qt-sdk
@@ -84,14 +84,14 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           $env:Path = "${{ github.workspace }}/release-qt/sdk/bin;$env:Path"
-          cmake -S . -B build -G 'Visual Studio 17 2022' -A x64 -DCMAKE_PREFIX_PATH=release-qt/sdk -DSCREENFRAME_QT_NOTICES_DIR=release-qt/notices
+          cmake -S . -B build -G 'Visual Studio 17 2022' -A x64 -DCMAKE_PREFIX_PATH=release-qt/sdk -DFRAMELINE_QT_NOTICES_DIR=release-qt/notices
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build --config Release --parallel
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir build -C Release --output-on-failure
       - name: Package Windows ZIP
         if: runner.os == 'Windows'
-        run: ./scripts/package-windows.ps1 -BuildDirectory build -OutputZip "dist/ScreenFrame-$env:SCREENFRAME_VERSION-windows-x64.zip"
+        run: ./scripts/package-windows.ps1 -BuildDirectory build -OutputZip "dist/Frameline-$env:FRAMELINE_VERSION-windows-x64.zip"
       - name: Configure, build, and test on macOS
         if: runner.os == 'macOS'
         shell: bash
@@ -100,7 +100,7 @@ jobs:
         run: |
           if [[ "$RELEASE_TARGET" == macos-universal ]]; then
             cmake -S . -B build -DCMAKE_BUILD_TYPE=Release '-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64' \
-              -DCMAKE_PREFIX_PATH="$PWD/release-qt/sdk" -DSCREENFRAME_QT_NOTICES_DIR="$PWD/release-qt/notices"
+              -DCMAKE_PREFIX_PATH="$PWD/release-qt/sdk" -DFRAMELINE_QT_NOTICES_DIR="$PWD/release-qt/notices"
           else
             cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 \
               -DCMAKE_PREFIX_PATH="$PWD/release-qt/sdk"
@@ -109,7 +109,7 @@ jobs:
           ctest --test-dir build --output-on-failure
       - name: Package universal macOS DMG
         if: matrix.target == 'macos-universal'
-        run: bash scripts/package-macos.sh build "dist/ScreenFrame-$SCREENFRAME_VERSION-macOS-universal.dmg"
+        run: bash scripts/package-macos.sh build "dist/Frameline-$FRAMELINE_VERSION-macOS-universal.dmg"
       - name: Configure, build, and test on Ubuntu
         if: runner.os == 'Linux'
         run: |
@@ -121,10 +121,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           cpack --config build/CPackConfig.cmake -G DEB -B dist
-          package="dist/screenframe_${SCREENFRAME_VERSION}_amd64.deb"
+          package="dist/frameline_${FRAMELINE_VERSION}_amd64.deb"
           dpkg-deb --info "$package"
           sudo apt-get install -y "./$package"
-          test "$(screenframe --version)" = "ScreenFrame $SCREENFRAME_VERSION"
+          test "$(frameline --version)" = "Frameline $FRAMELINE_VERSION"
       - name: Upload packages for aggregation
         if: matrix.target != 'macos-intel-test'
         uses: actions/upload-artifact@v4
@@ -154,7 +154,7 @@ jobs:
           sha256sum --check SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: screenframe-release-candidate
+          name: frameline-release-candidate
           path: release/
           if-no-files-found: error
           compression-level: 0

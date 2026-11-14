@@ -1,21 +1,21 @@
-ScreenFrame uses the shared libraries and plugins of Qt Base @QT_VERSION@,
+Frameline uses the shared libraries and plugins of Qt Base @QT_VERSION@,
 Copyright (C) The Qt Company Ltd. and other contributors, under the GNU Lesser
 General Public License version 3. The GNU GPL and LGPL texts are included in
 upstream/LICENSES. THIRD-PARTY.txt and upstream/ contain upstream notices and
 license texts for code included in Qt Base, including FreeType where enabled.
 The SDK build options are in qt-build-options.txt.
 
-The matching source bundle, qtbase-@QT_VERSION@-screenframe-source.tar.xz,
-is supplied beside the ScreenFrame Windows and macOS binary downloads. It
+The matching source bundle, qtbase-@QT_VERSION@-frameline-source.tar.xz,
+is supplied beside the Frameline Windows and macOS binary downloads. It
 contains the upstream source archive, Qt's security patches for CVE-2026-105924,
 CVE-2026-105943 and CVE-2026-116337, and scripts to reproduce the shared Qt build.
 
 You may replace the Qt libraries with interface-compatible modified builds.
 On Windows, extract the ZIP, replace the Qt DLLs in bin and the matching
 plugins in plugins. Preserve the layout and leave bin/qt.conf in place.
-On macOS, copy ScreenFrame.app to a writable location, replace the frameworks
+On macOS, copy Frameline.app to a writable location, replace the frameworks
 in Contents/Frameworks and matching plugins in Contents/PlugIns, and re-sign
 each changed framework or plugin and the app with `codesign --force --sign -`.
 Re-sign the nested code before the app. macOS may request Screen Recording
-permission again for the modified app. You can also rebuild ScreenFrame from
+permission again for the modified app. You can also rebuild Frameline from
 its source using the build instructions and a modified shared Qt SDK.

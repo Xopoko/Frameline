@@ -37,7 +37,7 @@ const auto fullKeys = QStringLiteral("Ctrl+Alt+Shift+1");
 const auto regionKeys = QStringLiteral("Ctrl+Alt+Shift+2");
 const auto systemKeys = QStringLiteral("Win+S");
 const auto takeoverText = QStringLiteral("Use Win+S for region capture");
-const auto takeoverDetails = QStringLiteral("While ScreenFrame is running, Win+S opens region capture in place of Windows Search.");
+const auto takeoverDetails = QStringLiteral("While Frameline is running, Win+S opens region capture in place of Windows Search.");
 #elif defined(Q_OS_MACOS)
 const auto fullKeys = QStringLiteral("⌘⌥⇧1");
 const auto regionKeys = QStringLiteral("⌘⌥⇧2");
@@ -207,7 +207,7 @@ struct SettingsWindow::Ui {
     Ui(SettingsWindow &dialog, const AppSettings &settings)
         : dialog(dialog), saved(settings), hostDraft(settings.hostedLibrary)
     {
-        dialog.setWindowTitle(QStringLiteral("Settings — ScreenFrame"));
+        dialog.setWindowTitle(QStringLiteral("Settings — Frameline"));
         dialog.setMinimumWidth(540);
         dialog.setObjectName(QStringLiteral("surface"));
         auto *root = new QVBoxLayout(&dialog);
@@ -292,7 +292,7 @@ struct SettingsWindow::Ui {
         column->addWidget(theme::label(QStringLiteral("Startup"), "sectionTitle", page));
         column->addSpacing(10);
         auto *group = new Group(page);
-        autostart = new Toggle(QStringLiteral("Start ScreenFrame when I sign in"));
+        autostart = new Toggle(QStringLiteral("Start Frameline when I sign in"));
         autostart->setObjectName(QStringLiteral("startOnLogin"));
         QString error;
         autostart->setChecked(Autostart::isEnabled(&error));
@@ -301,7 +301,7 @@ struct SettingsWindow::Ui {
         column->addWidget(group);
         column->addSpacing(7);
         column->addWidget(paragraph(startupEditable
-            ? QStringLiteral("ScreenFrame starts in the system tray, ready to capture and run your library.")
+            ? QStringLiteral("Frameline starts in the system tray, ready to capture and run your library.")
             : error, "caption", page));
     }
 
@@ -318,7 +318,7 @@ struct SettingsWindow::Ui {
         group->addWidgetRow(takeover);
         column->addWidget(group);
         column->addSpacing(8);
-        column->addWidget(paragraph(takeoverDetails + QStringLiteral(" Changes apply after ScreenFrame restarts."), "caption", page));
+        column->addWidget(paragraph(takeoverDetails + QStringLiteral(" Changes apply after Frameline restarts."), "caption", page));
         QObject::connect(takeover, &QAbstractButton::toggled, &dialog,
                          [this](bool checked) { regionCap->setKeys(checked ? systemKeys : regionKeys); });
     }
@@ -408,7 +408,7 @@ struct SettingsWindow::Ui {
         column->setContentsMargins(0, 0, 0, 12);
         column->setSpacing(8);
         column->addWidget(paragraph(QStringLiteral("Screenshots are stored on this computer. "
-                                                   "Keep it on with ScreenFrame running to reach them from other devices."),
+                                                   "Keep it on with Frameline running to reach them from other devices."),
                                     "caption", hostDetails));
         hostStatus = new StatusLine(hostDetails);
         column->addWidget(hostStatus);
@@ -472,7 +472,7 @@ struct SettingsWindow::Ui {
             if (invite.isEmpty())
                 return;
             QGuiApplication::clipboard()->setText(invite);
-            setStatus(QStringLiteral("Code copied. Paste it into ScreenFrame on a device you trust."),
+            setStatus(QStringLiteral("Code copied. Paste it into Frameline on a device you trust."),
                       StatusLine::Success);
         });
         return tailscaleDetails;

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Opt in to replacing GNOME's Super+S with ScreenFrame, or restore it."""
+"""Opt in to replacing GNOME's Super+S with Frameline, or restore it."""
 
 import argparse
 import fcntl
@@ -17,6 +17,8 @@ from gi.repository import Gio, GLib
 MEDIA = "org.gnome.settings-daemon.plugins.media-keys"
 SHELL = "org.gnome.shell.keybindings"
 LIST = "custom-keybindings"
+# Frameline was called ScreenFrame. These identifiers keep that name so an existing assignment can
+# still be found and removed.
 CUSTOM = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/screenframe-region/"
 SHELL_KEYS = ("toggle-quick-settings", "toggle-overview")
 BINDING = "<Super>s"
@@ -60,16 +62,16 @@ def status(media, shell, custom, record_path):
     if record_path.exists():
         record = json.loads(record_path.read_text(encoding="utf-8"))
         if not assignment_matches(media, custom, record):
-            print("The saved ScreenFrame shortcut differs from the GNOME settings.")
+            print("The saved Frameline shortcut differs from the GNOME settings.")
             return 1
         if any(user_value(shell, key) != change["after"] for key, change in record["shell"].items()):
-            print("The previous GNOME shortcut was edited after ScreenFrame was configured.")
+            print("The previous GNOME shortcut was edited after Frameline was configured.")
             return 1
         check_other_custom_bindings(media)
-        print("Super+S is assigned to ScreenFrame.")
+        print("Super+S is assigned to Frameline.")
         return 0
     if CUSTOM in media.get_strv(LIST):
-        print("A ScreenFrame shortcut exists without saved settings.")
+        print("A Frameline shortcut exists without saved settings.")
         return 1
     print("Super+S takeover is not configured.")
     return 1
@@ -82,16 +84,16 @@ def install(media, shell, custom, record_path, executable):
                 and all(user_value(shell, key) == change["after"]
                         for key, change in record["shell"].items())):
             check_other_custom_bindings(media)
-            print("Super+S already launches ScreenFrame.")
+            print("Super+S already launches Frameline.")
             return
-        raise ValueError("An incomplete ScreenFrame shortcut assignment exists. Run remove first.")
+        raise ValueError("An incomplete Frameline shortcut assignment exists. Run remove first.")
 
     if not shutil.which(executable) or not Path(executable).is_absolute():
-        raise ValueError("Specify the absolute path to the installed screenframe executable.")
+        raise ValueError("Specify the absolute path to the installed frameline executable.")
     check_other_custom_bindings(media)
     if CUSTOM in media.get_strv(LIST) or any(
             user_value(custom, key) is not None for key in ("name", "command", "binding")):
-        raise ValueError("A ScreenFrame shortcut exists without saved settings.")
+        raise ValueError("A Frameline shortcut exists without saved settings.")
 
     changes = {}
     schema = shell.get_property("settings-schema")
@@ -103,7 +105,7 @@ def install(media, shell, custom, record_path, executable):
         if remaining != current:
             changes[key] = {"before": user_value(shell, key), "after": remaining}
     values = {
-        "name": "ScreenFrame: Capture region",
+        "name": "Frameline: Capture region",
         "command": f"{shlex.quote(executable)} capture region",
         "binding": BINDING,
     }
@@ -128,16 +130,16 @@ def install(media, shell, custom, record_path, executable):
     except ValueError:
         remove(media, shell, custom, record_path)
         raise
-    print("Super+S now opens ScreenFrame region capture.")
+    print("Super+S now opens Frameline region capture.")
 
 
 def remove(media, shell, custom, record_path):
     if not record_path.exists():
-        raise ValueError("No saved ScreenFrame shortcut assignment was found.")
+        raise ValueError("No saved Frameline shortcut assignment was found.")
     record = json.loads(record_path.read_text(encoding="utf-8"))
     for key, value in record["custom"].items():
         if user_value(custom, key) not in (None, value):
-            raise ValueError("The ScreenFrame shortcut was edited. Remove it in GNOME Settings.")
+            raise ValueError("The Frameline shortcut was edited. Remove it in GNOME Settings.")
     for key, change in record["shell"].items():
         if user_value(shell, key) not in (change["before"], change["after"]):
             raise ValueError(f"The {key} shortcut was edited. Restore it in GNOME Settings.")
@@ -152,15 +154,15 @@ def remove(media, shell, custom, record_path):
     for key, change in record["shell"].items():
         set_value(shell, key, change["before"], "as")
     record_path.unlink()
-    print("ScreenFrame shortcut removed and the previous Super+S assignment restored.")
+    print("Frameline shortcut removed and the previous Super+S assignment restored.")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("install", "remove", "status"),
                         help="install replaces Super+S, remove restores it, status only checks")
-    parser.add_argument("--executable", default="/usr/bin/screenframe",
-                        help="absolute path to ScreenFrame (for install)")
+    parser.add_argument("--executable", default="/usr/bin/frameline",
+                        help="absolute path to Frameline (for install)")
     args = parser.parse_args()
     source = Gio.SettingsSchemaSource.get_default()
     if not source or not all(source.lookup(schema, True)

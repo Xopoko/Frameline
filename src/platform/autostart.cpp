@@ -12,7 +12,7 @@
 namespace Autostart {
 namespace {
 
-const auto appId = QStringLiteral("io.github.xopoko.ScreenFrame");
+const auto appId = QStringLiteral("io.github.xopoko.Frameline");
 const auto trayArgument = QStringLiteral("--tray");
 
 bool fail(QString *error, const QString &message)
@@ -27,25 +27,29 @@ QString executablePath()
     const QFileInfo current(QCoreApplication::applicationFilePath());
 #ifdef Q_OS_WIN
     // The command-line executable would open a console when Windows starts it.
-    if (current.fileName().compare(QStringLiteral("screenframe.exe"), Qt::CaseInsensitive) == 0)
-        return current.dir().filePath(QStringLiteral("ScreenFrameGUI.exe"));
+    if (current.fileName().compare(QStringLiteral("frameline.exe"), Qt::CaseInsensitive) == 0)
+        return current.dir().filePath(QStringLiteral("FramelineGUI.exe"));
 #endif
     return current.absoluteFilePath();
 }
 
+// Frameline was called ScreenFrame, and its startup entry used that name.
+const auto legacyAppId = QStringLiteral("io.github.xopoko.ScreenFrame");
+
 #ifdef Q_OS_WIN
 const auto runKey = QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run");
-const auto runValue = QStringLiteral("ScreenFrame");
+const auto runValue = QStringLiteral("Frameline");
+const auto legacyRunValue = QStringLiteral("ScreenFrame");
 #else
-QString entryPath()
+QString entryPath(const QString &id = appId)
 {
 #ifdef Q_OS_MACOS
-    return QDir::home().filePath(QStringLiteral("Library/LaunchAgents/") + appId + QStringLiteral(".plist"));
+    return QDir::home().filePath(QStringLiteral("Library/LaunchAgents/") + id + QStringLiteral(".plist"));
 #else
     const QString config = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
     if (config.isEmpty())
         return {};
-    return QDir(config).filePath(QStringLiteral("autostart/") + appId + QStringLiteral(".desktop"));
+    return QDir(config).filePath(QStringLiteral("autostart/") + id + QStringLiteral(".desktop"));
 #endif
 }
 
@@ -119,7 +123,7 @@ QByteArray Detail::linuxEntry(const QString &executable)
             argument += u'%';
         argument += character;
     }
-    return "[Desktop Entry]\nType=Application\nName=ScreenFrame\nExec=\""
+    return "[Desktop Entry]\nType=Application\nName=Frameline\nExec=\""
         + argument.toUtf8() + "\" " + trayArgument.toLatin1() + "\nTerminal=false\n";
 }
 
@@ -131,19 +135,19 @@ State Detail::fileSnapshot(const QString &path, QString *error)
     if (!entry.exists() && !entry.isSymLink())
         return {};
     if (entry.isSymLink() || !entry.isFile()) {
-        fail(error, QStringLiteral("The ScreenFrame startup entry is not a regular file."));
+        fail(error, QStringLiteral("The Frameline startup entry is not a regular file."));
         return {};
     }
 
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        fail(error, QStringLiteral("Could not read the ScreenFrame startup entry. %1").arg(file.errorString()));
+        fail(error, QStringLiteral("Could not read the Frameline startup entry. %1").arg(file.errorString()));
         return {};
     }
     constexpr qint64 maxEntrySize = 64 * 1024;
     const QByteArray contents = file.read(maxEntrySize + 1);
     if (file.error() != QFileDevice::NoError || contents.size() > maxEntrySize) {
-        fail(error, QStringLiteral("Could not read the ScreenFrame startup entry."));
+        fail(error, QStringLiteral("Could not read the Frameline startup entry."));
         return {};
     }
     return {contents};
@@ -158,17 +162,17 @@ bool Detail::restoreFile(const QString &path, const State &state, QString *error
         QFile file(path);
         if (file.remove() || (!entry.exists() && !entry.isSymLink()))
             return true;
-        return fail(error, QStringLiteral("Could not remove the ScreenFrame startup entry. %1").arg(file.errorString()));
+        return fail(error, QStringLiteral("Could not remove the Frameline startup entry. %1").arg(file.errorString()));
     }
     if (entry.isSymLink() || (entry.exists() && !entry.isFile()))
-        return fail(error, QStringLiteral("Could not create the ScreenFrame startup entry."));
+        return fail(error, QStringLiteral("Could not create the Frameline startup entry."));
     if (!QDir().mkpath(entry.absolutePath()))
         return fail(error, QStringLiteral("Could not create the startup folder."));
 
     const QByteArray contents = state.entry.toByteArray();
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(contents) != contents.size() || !file.commit())
-        return fail(error, QStringLiteral("Could not save the ScreenFrame startup entry. %1").arg(file.errorString()));
+        return fail(error, QStringLiteral("Could not save the Frameline startup entry. %1").arg(file.errorString()));
     return true;
 }
 
@@ -229,18 +233,35 @@ bool setEnabled(bool enabled, QString *error)
     const QString executable = executablePath();
     const QFileInfo executableFile(executable);
     if (!executableFile.isFile() || !executableFile.isExecutable())
-        return fail(error, QStringLiteral("Could not find the ScreenFrame application to start at login."));
+        return fail(error, QStringLiteral("Could not find the Frameline application to start at login."));
 #ifdef Q_OS_WIN
     const QString command = Detail::windowsCommand(executable);
     if (command.isEmpty())
-        return fail(error, QStringLiteral("Move ScreenFrame to a shorter folder path and try again."));
+        return fail(error, QStringLiteral("Move Frameline to a shorter folder path and try again."));
     return restore({command}, error);
 #else
     const QByteArray contents = entryContents(executable);
     if (contents.isEmpty())
-        return fail(error, QStringLiteral("Move ScreenFrame to a folder with a simpler name and try again."));
+        return fail(error, QStringLiteral("Move Frameline to a folder with a simpler name and try again."));
     return restore({contents}, error);
 #endif
+}
+
+void moveFromScreenFrame()
+{
+#ifdef Q_OS_WIN
+    QSettings run(runKey, QSettings::NativeFormat);
+    if (!run.contains(legacyRunValue))
+        return;
+    run.remove(legacyRunValue);
+    run.sync();
+#else
+    const QString legacy = entryPath(legacyAppId);
+    if (legacy.isEmpty() || !QFileInfo(legacy).isFile() || !QFile::remove(legacy))
+        return;
+#endif
+    // The old entry pointed at the ScreenFrame executable. Start this one at login instead.
+    setEnabled(true);
 }
 
 } // namespace Autostart

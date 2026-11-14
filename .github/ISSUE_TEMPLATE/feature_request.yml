@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest something that would make ScreenFrame better.
+description: Suggest something that would make Frameline better.
 labels: [enhancement]
 body:
   - type: textarea

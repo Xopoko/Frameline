@@ -39,7 +39,7 @@
 namespace {
 constexpr qint64 maxImage = 64 * 1024 * 1024;
 constexpr qint64 maxThumbnail = 2 * 1024 * 1024;
-constexpr auto readyMarker = "screenframe-ready";
+constexpr auto readyMarker = "frameline-ready";
 
 bool isId(const QString &id)
 {
@@ -292,7 +292,7 @@ struct LibraryClient::State : QObject {
             const bool matchesHost = hosted.port == port && hosted.token.toLatin1() == token;
             if ((!managedDirectory.isEmpty() || matchesHost) && (!matchesHost || !hosted.enabled
                 || !LibraryServer::isRunning(hosted.directory)))
-                return QStringLiteral("Open ScreenFrame on the computer that hosts the library.");
+                return QStringLiteral("Open Frameline on the computer that hosts the library.");
         }
         return {};
     }
@@ -353,7 +353,7 @@ struct LibraryClient::State : QObject {
                           QStringLiteral("-o"), QStringLiteral("ServerAliveInterval=15"),
                           QStringLiteral("-o"), QStringLiteral("ServerAliveCountMax=2"),
                           QStringLiteral("-L"), QStringLiteral("127.0.0.1:%1:127.0.0.1:%2").arg(localPort).arg(port),
-                          host, QStringLiteral("printf 'screenframe-ready\\n'; exec cat")});
+                          host, QStringLiteral("printf 'frameline-ready\\n'; exec cat")});
         timeout.start(8000);
         ssh.start();
     }
@@ -558,6 +558,7 @@ struct LibraryClient::State : QObject {
         uploadRequest.setHeader(QNetworkRequest::ContentLengthHeader, file->size());
         uploadRequest.setAttribute(QNetworkRequest::DoNotBufferUploadDataAttribute, true);
         if (!thumbnail) {
+            // The header names predate the rename from ScreenFrame; libraries already running expect them.
             uploadRequest.setRawHeader("X-ScreenFrame-Captured-At", object.value(QStringLiteral("capturedAt")).toString().toLatin1());
             uploadRequest.setRawHeader("X-ScreenFrame-Device", object.value(QStringLiteral("device")).toString().toLatin1());
             uploadRequest.setRawHeader("X-ScreenFrame-Kind", object.value(QStringLiteral("kind")).toString().toLatin1());
@@ -648,7 +649,7 @@ void LibraryClient::start()
     if (isConfigured() && d->autoArchive) {
         d->status();
         d->pump();
-        // Other ScreenFrame processes, including GNOME hotkey invocations, share the same queue.
+        // Other Frameline processes, including GNOME hotkey invocations, share the same queue.
         auto *poll = new QTimer(d.get());
         poll->setInterval(10000);
         connect(poll, &QTimer::timeout, d.get(), [this] { d->pump(); });

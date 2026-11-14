@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="resources/ScreenFrame.png" width="104" alt="ScreenFrame icon">
+  <img src="resources/Frameline.png" width="104" alt="Frameline icon">
 </p>
 
-<h1 align="center">ScreenFrame</h1>
+<h1 align="center">Frameline</h1>
 
 <p align="center">
   <strong>Capture it. Mark it up. Share it.</strong><br>
@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Xopoko/ScreenFrame/actions/workflows/build.yml"><img src="https://github.com/Xopoko/ScreenFrame/actions/workflows/build.yml/badge.svg" alt="Build and test"></a>
+  <a href="https://github.com/Xopoko/Frameline/actions/workflows/build.yml"><img src="https://github.com/Xopoko/Frameline/actions/workflows/build.yml/badge.svg" alt="Build and test"></a>
   <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-5fe3b5?style=flat-square&labelColor=151a20" alt="Windows, macOS and Linux">
   <img src="https://img.shields.io/badge/Qt-6-5fe3b5?style=flat-square&labelColor=151a20" alt="Qt 6">
   <img src="https://img.shields.io/badge/C%2B%2B-20-5fe3b5?style=flat-square&labelColor=151a20" alt="C++20">
@@ -22,7 +22,7 @@
   <img src="docs/media/demo.gif" width="880" alt="Selecting a region of an API keys page, redacting the live key, blurring the test keys, pointing an arrow at the Create key button and copying the result">
 </p>
 
-## Why ScreenFrame
+## Why Frameline
 
 - **One shortcut away.** Press `⌘⌥⇧2` or `Ctrl+Alt+Shift+2` in any app. The screen freezes, so menus and tooltips stay where they were while you drag.
 - **Markup that keeps secrets secret.** Redact paints a solid block over keys and passwords; Blur softens the rest. Arrows, pen and rectangles for everything else, with full undo.
@@ -53,9 +53,13 @@
 
 ## Install
 
-- **Windows 10 1809+ / 11, x64**: extract the ZIP and run `bin/ScreenFrameGUI.exe`. The CLI is `bin/screenframe.exe`.
-- **macOS 14.4+**: move `ScreenFrame.app` to Applications, allow it in **System Settings → Privacy & Security → Screen & System Audio Recording**, then reopen it.
-- **Ubuntu 24.04, amd64**: `sudo apt install ./screenframe_0.3.0_amd64.deb`. Works on X11 and on GNOME Wayland through the screenshot portal.
+Download the package for your system from [Releases](https://github.com/Xopoko/Frameline/releases).
+
+- **Windows 10 1809+ / 11, x64**: extract the ZIP and run `bin/FramelineGUI.exe`. The CLI is `bin/frameline.exe`.
+- **macOS 14.4+**: move `Frameline.app` to Applications, allow it in **System Settings → Privacy & Security → Screen & System Audio Recording**, then reopen it.
+- **Ubuntu 24.04, amd64**: `sudo apt install ./frameline_<version>_amd64.deb`. Works on X11 and on GNOME Wayland through the screenshot portal.
+
+Frameline was called ScreenFrame until version 0.3.0. When you upgrade, your settings, queued uploads, a library kept on this computer and the choice to start at sign-in carry over on first launch. On Ubuntu the new package replaces `screenframe` and keeps the `screenframe` command working. On macOS, allow Frameline to record the screen once more, and delete the old ScreenFrame app.
 
 ## Usage
 
@@ -64,9 +68,9 @@
 | Capture the screen under the pointer | `Ctrl+Alt+Shift+1` | `⌘⌥⇧1` |
 | Capture a region | `Ctrl+Alt+Shift+2` | `⌘⌥⇧2` |
 
-Global shortcuts work while ScreenFrame is running, including from the tray. In **Settings** you can move region capture to the system key instead: `Win+S`, `⌘⇧5` or `Super+S`. On macOS, first turn off **Screenshot and recording options** under **System Settings → Keyboard → Keyboard Shortcuts → Screenshots**.
+Global shortcuts work while Frameline is running, including from the tray. In **Settings** you can move region capture to the system key instead: `Win+S`, `⌘⇧5` or `Super+S`. On macOS, first turn off **Screenshot and recording options** under **System Settings → Keyboard → Keyboard Shortcuts → Screenshots**.
 
-Turn on **Start ScreenFrame when I sign in** in **Settings** and save to start ScreenFrame in the tray at your next login. If you move the app to a new location, enable the setting from that copy.
+Turn on **Start Frameline when I sign in** in **Settings** and save to start Frameline in the tray at your next login. If you move the app to a new location, enable the setting from that copy.
 
 For a region, drag over the frozen screen and release. `Esc` or a right click cancels.
 
@@ -83,29 +87,29 @@ Use Redact rather than Blur for sensitive details. In the library viewer, `←` 
 
 On Wayland the desktop may ask for permission to capture, and GNOME may also save its own copy in Pictures. A full-screen capture is whatever the screenshot portal returns, usually the whole desktop, and region capture shows it on one monitor.
 
-GNOME can run `screenframe capture region` on `Super+S` even when ScreenFrame is closed:
+GNOME can run `frameline capture region` on `Super+S` even when Frameline is closed:
 
 ```sh
-python3 /usr/share/screenframe/configure-gnome-shortcut.py install   # or: status, remove
+python3 /usr/share/frameline/configure-gnome-shortcut.py install   # or: status, remove
 ```
 
-If the global shortcuts portal is missing, bind `screenframe capture full` and `screenframe capture region` as custom shortcuts in your desktop settings.
+If the global shortcuts portal is missing, bind `frameline capture full` and `frameline capture region` as custom shortcuts in your desktop settings.
 
 ## Shared library
 
-<img src="docs/media/settings.png" width="340" align="right" alt="ScreenFrame settings with a shared library ready and a copy connection code button">
+<img src="docs/media/settings.png" width="340" align="right" alt="Frameline settings with a shared library ready and a copy connection code button">
 
-On the computer that will keep your screenshots, open **Settings → Shared library → Create here** and select **Create library**. ScreenFrame creates the library and starts it. You can use it on that computer with ScreenFrame alone.
+On the computer that will keep your screenshots, open **Settings → Shared library → Create here** and select **Create library**. Frameline creates the library and starts it. You can use it on that computer with Frameline alone.
 
 To connect another computer, including over the internet:
 
 1. Install Tailscale on both computers and sign in with the same account. [Get Tailscale](https://tailscale.com/download)
-2. On the computer with the library, turn on **Access from other devices**, select **Apply sharing**, then **Copy connection code**. If ScreenFrame has not detected Tailscale yet, select **Check Tailscale**.
-3. On the other computer, open **Settings → Shared library → Connect**, paste the code and select **Connect**. ScreenFrame checks the connection before saving it. Keep the code private. It grants read and write access to your library.
+2. On the computer with the library, turn on **Access from other devices**, select **Apply sharing**, then **Copy connection code**. If Frameline has not detected Tailscale yet, select **Check Tailscale**.
+3. On the other computer, open **Settings → Shared library → Connect**, paste the code and select **Connect**. Frameline checks the connection before saving it. Keep the code private. It grants read and write access to your library.
 
-If the connection check fails, make sure the library computer is awake, ScreenFrame is running, and both computers are connected to Tailscale with the same account. **Start ScreenFrame when I sign in** brings the library back when you sign in on its computer.
+If the connection check fails, make sure the library computer is awake, Frameline is running, and both computers are connected to Tailscale with the same account. **Start Frameline when I sign in** brings the library back when you sign in on its computer.
 
-Turn on **Archive screenshots from this device** wherever you want automatic uploads. With archiving on, the final edited image is uploaded when you close the editor, take another capture or quit. Uploads that fail are kept locally and retried. Browse the library from the editor, the tray or `screenframe library`.
+Turn on **Archive screenshots from this device** wherever you want automatic uploads. With archiving on, the final edited image is uploaded when you close the editor, take another capture or quit. Uploads that fail are kept locally and retried. Browse the library from the editor, the tray or `frameline library`.
 
 For a separately managed server, choose **Advanced** and see the [standalone server instructions](server/README.md).
 
@@ -114,16 +118,16 @@ For a separately managed server, choose **Advanced** and see the [standalone ser
 ## Command line
 
 ```sh
-screenframe                     # open the editor
-screenframe --tray              # start in the tray
-screenframe library
-screenframe settings
-screenframe capture full
-screenframe capture region --output area.png
-screenframe capture full --output shot.png --no-preview
+frameline                     # open the editor
+frameline --tray              # start in the tray
+frameline library
+frameline settings
+frameline capture full
+frameline capture region --output area.png
+frameline capture full --output shot.png --no-preview
 ```
 
-On macOS the binary is `ScreenFrame.app/Contents/MacOS/ScreenFrame`. `--output` writes the unedited capture; `--no-preview` exits right after. Exit codes: `0` success, `1` error, `2` cancelled.
+On macOS the binary is `Frameline.app/Contents/MacOS/Frameline`. `--output` writes the unedited capture; `--no-preview` exits right after. Exit codes: `0` success, `1` error, `2` cancelled.
 
 ## Building
 
@@ -139,10 +143,10 @@ python3 -B -m unittest discover -s server
 
 `cmake --install build --prefix <dir>` stages a self-contained app on Windows and macOS. On Ubuntu, `cpack --config build/CPackConfig.cmake -B dist` builds the DEB.
 
-The screenshots and the demo above come from the app itself: `build/screenframe_shots <dir>` renders every window and state, and `--demo-editor` / `--demo-region` record the demo frames. See [architecture](docs/architecture.md).
+The screenshots and the demo above come from the app itself: `build/frameline_shots <dir>` renders every window and state, and `--demo-editor` / `--demo-region` record the demo frames. See [architecture](docs/architecture.md).
 
 ## Contributing
 
 Bug reports and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first, use sample content in screenshots, and report security issues privately as described in [SECURITY.md](SECURITY.md). More: [architecture](docs/architecture.md), [releasing](docs/release.md).
 
-ScreenFrame is MIT-licensed; bundled Qt components keep their own licenses.
+Frameline is MIT-licensed; bundled Qt components keep their own licenses.

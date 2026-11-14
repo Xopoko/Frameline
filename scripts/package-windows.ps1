@@ -15,8 +15,8 @@ if (Test-Path -LiteralPath $output) {
 
 $outputDirectory = Split-Path -Parent $output
 $null = New-Item -ItemType Directory -Path $outputDirectory -Force
-$work = Join-Path $outputDirectory ('.screenframe-package-' + [guid]::NewGuid().ToString('N'))
-$stage = Join-Path $work 'ScreenFrame'
+$work = Join-Path $outputDirectory ('.frameline-package-' + [guid]::NewGuid().ToString('N'))
+$stage = Join-Path $work 'Frameline'
 $null = New-Item -ItemType Directory -Path $stage
 try {
     cmake --install $build --config Release --prefix $stage
@@ -30,7 +30,7 @@ try {
     Get-ChildItem -LiteralPath $runtime[0].FullName -File -Filter '*.dll' | Copy-Item -Destination $bin
 
     $requiredFiles = @(
-        'bin/screenframe.exe', 'bin/ScreenFrameGUI.exe', 'bin/qt.conf',
+        'bin/frameline.exe', 'bin/FramelineGUI.exe', 'bin/qt.conf',
         'bin/Qt6Core.dll', 'bin/Qt6Gui.dll', 'bin/Qt6Network.dll', 'bin/Qt6Widgets.dll',
         'bin/vcruntime140.dll', 'bin/msvcp140.dll',
         'plugins/platforms/qwindows.dll', 'plugins/imageformats/qjpeg.dll',
@@ -42,11 +42,11 @@ try {
         }
     }
 
-    $cli = Join-Path $stage 'bin/screenframe.exe'
+    $cli = Join-Path $stage 'bin/frameline.exe'
     & $cli --version
     if ($LASTEXITCODE -ne 0) { throw 'Packaged CLI did not start.' }
 
-    $archive = Join-Path $work 'ScreenFrame.zip'
+    $archive = Join-Path $work 'Frameline.zip'
     Compress-Archive -LiteralPath $stage -DestinationPath $archive -CompressionLevel Optimal
     [IO.File]::Move($archive, $output)
     Write-Output "Created $output"

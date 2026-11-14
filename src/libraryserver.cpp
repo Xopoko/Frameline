@@ -480,6 +480,7 @@ void LibraryServer::State::Connection::beginUpload(const Headers &headers)
         return;
     }
     if (!thumbnail) {
+        // The header names predate the rename from ScreenFrame, so every client version can upload.
         const auto time = normalizedTime(QString::fromLatin1(headers.value("x-screenframe-captured-at")));
         const auto width = headers.value("x-screenframe-width");
         const auto height = headers.value("x-screenframe-height");
@@ -734,7 +735,7 @@ bool LibraryServer::start(const QString &dataDir, const QString &token, quint16 
     lock->setStaleLockTime(0);
     if (!lock->tryLock(0)) {
         return report(error, lock->error() == QLockFile::LockFailedError
-                                 ? QStringLiteral("Another ScreenFrame is running this library.")
+                                 ? QStringLiteral("Another Frameline is running this library.")
                                  : QStringLiteral("Could not lock the library folder."));
     }
     if (!d->local.listen(QHostAddress::LocalHost, port))

@@ -25,7 +25,7 @@
 #if defined(Q_OS_WIN) && QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 #include <qt_windows.h>
 #include <qscreen_platform.h>
-#define SCREENFRAME_NATIVE_MONITOR_GEOMETRY
+#define FRAMELINE_NATIVE_MONITOR_GEOMETRY
 #endif
 
 #ifdef Q_OS_MACOS
@@ -45,7 +45,7 @@ const QColor panelText(242, 246, 248);
 const QColor panelMuted(160, 172, 182);
 const QColor accent = theme::overlayAccent;
 
-#ifdef SCREENFRAME_NATIVE_MONITOR_GEOMETRY
+#ifdef FRAMELINE_NATIVE_MONITOR_GEOMETRY
 QRectF nativeScreenGeometry(QScreen *screen)
 {
     const auto *native = screen->nativeInterface<QNativeInterface::QWindowsScreen>();
@@ -142,7 +142,7 @@ public:
         setMouseTracking(true);
         setCursor(Qt::CrossCursor);
         setFocusPolicy(Qt::StrongFocus);
-        setWindowTitle(QStringLiteral("ScreenFrame — Select region"));
+        setWindowTitle(QStringLiteral("Frameline — Select region"));
         setAccessibleDescription(QStringLiteral("Select a rectangular region. Press Esc to cancel."));
 
         cancel_ = new QPushButton(QStringLiteral("Cancel"), this);
@@ -502,7 +502,7 @@ private:
 
 void Session::show(const QList<CaptureFrame> &frames)
 {
-#ifdef SCREENFRAME_NATIVE_MONITOR_GEOMETRY
+#ifdef FRAMELINE_NATIVE_MONITOR_GEOMETRY
     nativeCoordinates_ = std::all_of(frames.cbegin(), frames.cend(), [](const CaptureFrame &frame) {
         return frame.image.isNull() || (frame.screen && !nativeScreenGeometry(frame.screen).isEmpty());
     });
@@ -515,7 +515,7 @@ void Session::show(const QList<CaptureFrame> &frames)
             continue;
 
         QRectF layout = frame.screen ? QRectF(frame.screen->geometry()) : QRectF(frame.image.rect());
-#ifdef SCREENFRAME_NATIVE_MONITOR_GEOMETRY
+#ifdef FRAMELINE_NATIVE_MONITOR_GEOMETRY
         // Qt leaves gaps in the virtual desktop geometry between displays with different scale factors.
         if (nativeCoordinates_)
             layout = nativeScreenGeometry(frame.screen);
@@ -601,7 +601,7 @@ QPointF Session::cursorPoint(const Overlay *overlay, const QMouseEvent &event) c
     QPointF point = overlay->fitsImage()
         ? mapPoint(event.position(), overlay->viewport(), overlay->layout())
         : event.globalPosition();
-#ifdef SCREENFRAME_NATIVE_MONITOR_GEOMETRY
+#ifdef FRAMELINE_NATIVE_MONITOR_GEOMETRY
     POINT native;
     if (nativeCoordinates_ && GetCursorPos(&native))
         point = QPointF(native.x, native.y);

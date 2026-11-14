@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Private, loopback-only ScreenFrame screenshot library."""
+"""Private, loopback-only Frameline screenshot library."""
 
 import argparse
 import base64
@@ -319,7 +319,7 @@ class Server(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ScreenFrame"
+    server_version = "Frameline"
     sys_version = ""
 
     def setup(self):
@@ -357,7 +357,7 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             self.close_connection = True
         except (OSError, sqlite3.Error) as error:
-            print(f"ScreenFrame storage error: {type(error).__name__}", flush=True)
+            print(f"Frameline storage error: {type(error).__name__}", flush=True)
             self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "Library storage failed"})
 
     def get(self, url):
@@ -506,10 +506,10 @@ def main():
         token = read_token(args.token_file)
         library = Library(args.data_dir)
         with Server(library, token, args.port) as server:
-            print(f"ScreenFrame library listening on 127.0.0.1:{args.port}", flush=True)
+            print(f"Frameline library listening on 127.0.0.1:{args.port}", flush=True)
             server.serve_forever()
     except (OSError, ValueError, sqlite3.Error) as error:
-        parser.exit(1, f"ScreenFrame library could not start: {error}\n")
+        parser.exit(1, f"Frameline library could not start: {error}\n")
     except KeyboardInterrupt:
         pass
 

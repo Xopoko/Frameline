@@ -26,10 +26,10 @@ struct LaunchOptions {
     bool preview = true;
 };
 
-class ScreenFrameApplication final : public QObject {
+class FramelineApplication final : public QObject {
 public:
-    explicit ScreenFrameApplication(LaunchOptions options);
-    ~ScreenFrameApplication() override;
+    explicit FramelineApplication(LaunchOptions options);
+    ~FramelineApplication() override;
     void start();
     void activate(LaunchOptions::Mode mode);
 

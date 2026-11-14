@@ -16,6 +16,8 @@ State snapshot(QString *error = nullptr);
 bool restore(const State &state, QString *error = nullptr);
 bool isEnabled(QString *error = nullptr);
 bool setEnabled(bool enabled, QString *error = nullptr);
+// Replaces a startup entry left by ScreenFrame, Frameline's former name, with a Frameline one.
+void moveFromScreenFrame();
 
 namespace Detail {
 

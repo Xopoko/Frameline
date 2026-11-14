@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=ScreenFrame
+Name=Frameline
 Comment=Take and annotate screenshots
-Exec=screenframe
-Icon=io.github.xopoko.ScreenFrame
+Exec=frameline
+Icon=io.github.xopoko.Frameline
 Terminal=false
 Categories=Graphics;
 StartupNotify=true
@@ -11,8 +11,8 @@ Actions=Full;Region;
 
 [Desktop Action Full]
 Name=Capture screen
-Exec=screenframe capture full
+Exec=frameline capture full
 
 [Desktop Action Region]
 Name=Capture region
-Exec=screenframe capture region
+Exec=frameline capture region

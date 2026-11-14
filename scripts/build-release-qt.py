@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the shared Qt Base SDK used in ScreenFrame release packages."""
+"""Build the shared Qt Base SDK used in Frameline release packages."""
 
 import argparse
 import os

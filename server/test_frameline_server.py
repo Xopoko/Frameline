@@ -12,7 +12,7 @@ import unittest
 from urllib.parse import urlencode
 import zlib
 
-from screenframe_server import Library, MAX_IMAGE, Server, read_token
+from frameline_server import Library, MAX_IMAGE, Server, read_token
 
 
 ROOT = "/v1/screenshots"
