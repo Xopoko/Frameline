@@ -19,6 +19,7 @@
 #include <QListView>
 #include <QPainter>
 #include <QPainterPath>
+#include <QScreen>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -50,6 +51,9 @@ void present(QWidget &window, QSize size)
 {
     window.setAttribute(Qt::WA_DontShowOnScreen);
     window.resize(size);
+    // Nothing places a window that never reaches the screen. Left in the screen's corner it lies under
+    // the menu bar and a MacBook's camera housing, where Qt insets the contents of a window.
+    window.move(window.screen()->availableGeometry().topLeft() + QPoint(40, 40));
     window.show();
     settle(200);
 }
@@ -150,6 +154,17 @@ void click(QWidget &window, const QString &name)
     }
 }
 
+// Shows the editor's confirmation for Copy. Pressing the button would replace the clipboard of the
+// desktop this runs on.
+void showCopied(EditorWindow &editor)
+{
+    if (auto *notice = editor.findChild<Notice *>()) {
+        notice->flash(QStringLiteral("Copied to clipboard"));
+    } else {
+        qWarning("The editor has no notice");
+    }
+}
+
 QWidget *namedWidget(QWidget &window, const QString &name)
 {
     for (auto *widget : window.findChildren<QWidget *>()) {
@@ -197,7 +212,7 @@ void editorShots()
         click(editor, QStringLiteral("Arrow"));
     }
     shoot(editor, QStringLiteral("03-editor-annotated"));
-    click(editor, QStringLiteral("Copy"));
+    showCopied(editor);
     settle(150);
     shoot(editor, QStringLiteral("04-editor-copied"));
 
@@ -488,12 +503,9 @@ void editorDemo(const QString &directory)
     markWith(QStringLiteral("Blur"), {0.522, 0.282}, {0.735, 0.525}, 12);
     markWith(QStringLiteral("Arrow"), {0.60, 0.80}, {0.405, 0.635}, 14);
 
-    QWidget *copy = namedWidget(editor, QStringLiteral("Copy"));
-    record.glide(editor, &editor, centerOf(editor, copy), 12);
+    record.glide(editor, &editor, centerOf(editor, namedWidget(editor, QStringLiteral("Copy"))), 12);
     record.hold(editor, 2);
-    if (auto *button = qobject_cast<QAbstractButton *>(copy)) {
-        button->click();
-    }
+    showCopied(editor);
     // End while the confirmation is still showing; the last frame is held when compositing.
     record.hold(editor, 5);
 }
