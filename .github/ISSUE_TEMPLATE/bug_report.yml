@@ -29,7 +29,7 @@ body:
     attributes:
       label: Frameline version
       description: Run `frameline --version`.
-      placeholder: Frameline 0.2.0
+      placeholder: Frameline 0.4.1
     validations:
       required: true
   - type: dropdown
@@ -55,8 +55,10 @@ body:
       label: Shared library
       options:
         - Not used
-        - On this computer
-        - Over SSH
+        - Created on this computer
+        - Connected with a code from another computer
+        - Standalone server on this computer
+        - Standalone server over SSH
   - type: textarea
     id: logs
     attributes:

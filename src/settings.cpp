@@ -1,10 +1,12 @@
 #include "settings.h"
 
+#include "libraryprotocol.h"
+#include "tailscale.h"
+
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRandomGenerator>
@@ -25,29 +27,6 @@ void report(QString *error, const QString &message)
 bool validPort(int port)
 {
     return port >= 1 && port <= 65535;
-}
-
-bool validToken(const QString &token)
-{
-    static const QRegularExpression pattern(QStringLiteral("\\A[A-Za-z0-9_-]{32,256}\\z"));
-    return pattern.match(token).hasMatch();
-}
-
-QString normalizedTailscaleAddress(const QString &address)
-{
-    static const QRegularExpression literal(QStringLiteral("\\A[0-9A-Fa-f.:]{1,45}\\z"));
-    static const QHostAddress ipv4Network(QStringLiteral("100.64.0.0"));
-    static const QHostAddress ipv6Network(QStringLiteral("fd7a:115c:a1e0::"));
-    if (!literal.match(address).hasMatch())
-        return {};
-
-    const QHostAddress parsed(address);
-    if (parsed.protocol() == QAbstractSocket::IPv4Protocol && parsed.toString() == address
-        && parsed.isInSubnet(ipv4Network, 10))
-        return address;
-    if (parsed.protocol() == QAbstractSocket::IPv6Protocol && parsed.isInSubnet(ipv6Network, 48))
-        return parsed.toString();
-    return {};
 }
 
 std::optional<QJsonObject> readObject(const QString &path, QString *error)
@@ -150,17 +129,11 @@ QString hostedConnectionError(const AppSettings &settings)
 }
 } // namespace
 
-bool isTailscaleAddress(const QString &address)
-{
-    return !normalizedTailscaleAddress(address).isEmpty();
-}
-
 QString LibrarySettings::validationError() const
 {
     if (!validPort(port))
         return QStringLiteral("Port must be between 1 and 65535.");
-    if (transport == LibraryTransport::Local && sshHost.isEmpty() && token.isEmpty()
-        && device.isEmpty() && !autoArchive && port == defaultLibraryPort && address.isEmpty())
+    if (*this == LibrarySettings{})
         return {};
 
     static const QRegularExpression safeHost(QStringLiteral("\\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\\z"));
@@ -169,11 +142,11 @@ QString LibrarySettings::validationError() const
         return QStringLiteral("Enter an SSH host or alias using letters, numbers, dots, underscores, or hyphens.");
     if (transport == LibraryTransport::Local && !sshHost.isEmpty())
         return QStringLiteral("A local connection does not use an SSH host.");
-    if (transport == LibraryTransport::Tailscale && (!sshHost.isEmpty() || !isTailscaleAddress(address)))
+    if (transport == LibraryTransport::Tailscale && (!sshHost.isEmpty() || normalizedTailscaleAddress(address).isEmpty()))
         return QStringLiteral("Paste a Frameline connection code with a valid Tailscale address.");
     if (transport != LibraryTransport::Tailscale && !address.isEmpty())
         return QStringLiteral("A Tailscale address requires a Tailscale connection.");
-    if (!validToken(token))
+    if (!LibraryProtocol::isToken(token))
         return QStringLiteral("Enter the library access token (32–256 letters, numbers, underscores, or hyphens).");
     if (!safeDevice.match(device).hasMatch() || device.trimmed().isEmpty())
         return QStringLiteral("Enter a device label of 1–48 printable ASCII characters.");
@@ -206,7 +179,7 @@ QString HostedLibrarySettings::validationError() const
     if (directory.size() > 2048 || directory.contains(QChar::Null) || !QDir::isAbsolutePath(path)
         || path.startsWith(QStringLiteral(":")) || QDir(path).isRoot())
         return QStringLiteral("Choose a folder for the library on this computer.");
-    if (!validToken(token))
+    if (!LibraryProtocol::isToken(token))
         return QStringLiteral("The library on this computer needs a valid access token.");
     return {};
 }
@@ -255,7 +228,7 @@ QString generateLibraryToken()
 QString libraryConnectionCode(const LibrarySettings &settings)
 {
     if (settings.transport != LibraryTransport::Tailscale || !settings.sshHost.isEmpty()
-        || !validPort(settings.port) || !validToken(settings.token))
+        || !validPort(settings.port) || !LibraryProtocol::isToken(settings.token))
         return {};
     const QString address = normalizedTailscaleAddress(settings.address);
     if (address.isEmpty())

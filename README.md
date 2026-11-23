@@ -91,6 +91,8 @@ On Wayland the desktop may ask for permission to capture, and GNOME may also sav
 
 On Wayland, automatic copying uses `wl-clipboard`, which is installed with the `.deb` package.
 
+The Ubuntu 24.04 package uses that release's Qt 6.4, which does not report the system appearance, so Frameline stays dark there. Start it with `FRAMELINE_THEME=light` for the light appearance.
+
 GNOME can run `frameline capture region` on `Super+S` even when Frameline is closed:
 
 ```sh

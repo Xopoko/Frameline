@@ -9,6 +9,7 @@
 #include <QNetworkInterface>
 #include <QNetworkProxy>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QUdpSocket>
 
@@ -48,13 +49,9 @@ QString executablePath()
     return QStandardPaths::findExecutable(QStringLiteral("tailscale"));
 }
 
-bool isTailscaleAddress(const QString &text)
+bool isCanonicalAddress(const QString &address)
 {
-    const QHostAddress address(text);
-    static const QHostAddress ipv4Range(QStringLiteral("100.64.0.0"));
-    static const QHostAddress ipv6Range(QStringLiteral("fd7a:115c:a1e0::"));
-    return address.toString() == text
-        && (address.isInSubnet(ipv4Range, 10) || address.isInSubnet(ipv6Range, 48));
+    return !address.isEmpty() && normalizedTailscaleAddress(address) == address;
 }
 
 QStringList activeAddresses()
@@ -64,9 +61,8 @@ QStringList activeAddresses()
         if (!adapter.flags().testFlag(QNetworkInterface::IsUp))
             continue;
         for (const auto &entry : adapter.addressEntries()) {
-            const QString address = entry.ip().toString();
-            if (isTailscaleAddress(address))
-                addresses.append(address);
+            if (isTailscaleAddress(entry.ip()))
+                addresses.append(entry.ip().toString());
         }
     }
     return addresses;
@@ -86,6 +82,29 @@ TailscaleStatus unavailableStatus()
 }
 }
 
+bool isTailscaleAddress(const QHostAddress &address)
+{
+    static const QHostAddress ipv4Range(QStringLiteral("100.64.0.0"));
+    static const QHostAddress ipv6Range(QStringLiteral("fd7a:115c:a1e0::"));
+    return address.scopeId().isEmpty()
+        && (address.isInSubnet(ipv4Range, 10) || address.isInSubnet(ipv6Range, 48));
+}
+
+QString normalizedTailscaleAddress(const QString &address)
+{
+    static const QRegularExpression literal(QStringLiteral("\\A[0-9A-Fa-f.:]{1,45}\\z"));
+    if (!literal.match(address).hasMatch())
+        return {};
+    const QHostAddress parsed(address);
+    if (!isTailscaleAddress(parsed))
+        return {};
+    const QString canonical = parsed.toString();
+    // IPv4 has one accepted spelling. IPv6 can be written in several ways and is rewritten.
+    if (parsed.protocol() == QAbstractSocket::IPv4Protocol && canonical != address)
+        return {};
+    return canonical;
+}
+
 bool TailscaleStatus::canReach(const QString &address) const
 {
     return !sourceForPeer(address).isEmpty();
@@ -93,7 +112,7 @@ bool TailscaleStatus::canReach(const QString &address) const
 
 QString TailscaleStatus::sourceForPeer(const QString &address) const
 {
-    if (state != TailscaleState::Ready || validUntil.hasExpired() || !isTailscaleAddress(address)
+    if (state != TailscaleState::Ready || validUntil.hasExpired() || !isCanonicalAddress(address)
         || (!localAddresses.contains(address) && !peerAddresses.contains(address)))
         return {};
 
@@ -235,7 +254,7 @@ TailscaleStatus TailscaleMonitor::parseStatus(const QByteArray &output, const QS
     const auto self = object.value(QStringLiteral("Self")).toObject();
     for (const auto &value : self.value(QStringLiteral("TailscaleIPs")).toArray()) {
         const QString address = value.toString();
-        if (isTailscaleAddress(address) && localAddresses.contains(address))
+        if (isCanonicalAddress(address) && localAddresses.contains(address))
             status.localAddresses.append(address);
     }
     if (status.localAddresses.isEmpty())
@@ -253,7 +272,7 @@ TailscaleStatus TailscaleMonitor::parseStatus(const QByteArray &output, const QS
             continue;
         for (const auto &ip : peer.value(QStringLiteral("TailscaleIPs")).toArray()) {
             const QString address = ip.toString();
-            if (isTailscaleAddress(address))
+            if (isCanonicalAddress(address))
                 status.peerAddresses.append(address);
         }
     }

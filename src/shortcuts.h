@@ -13,7 +13,10 @@ public:
     explicit GlobalShortcuts(QObject *parent = nullptr);
     ~GlobalShortcuts() override;
     void start(RegionShortcutPreset preset = RegionShortcutPreset::Standard);
+    // The keys of a shortcut as shown to the user. A Wayland desktop may assign other keys.
     QString description(bool region) const;
+    // The keys Frameline asks for, in the platform's notation.
+    static QString defaultKeys(bool region, RegionShortcutPreset preset);
 
 signals:
     void captureRequested(bool region);

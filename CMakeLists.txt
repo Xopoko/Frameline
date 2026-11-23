@@ -35,6 +35,7 @@ add_library(frameline_core STATIC
     src/editor.h
     src/libraryclient.cpp
     src/libraryclient.h
+    src/libraryprotocol.h
     src/libraryserver.cpp
     src/libraryserver.h
     src/librarywindow.cpp

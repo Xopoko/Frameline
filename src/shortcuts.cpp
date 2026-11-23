@@ -429,20 +429,7 @@ public:
                 return description;
         }
 #endif
-#if defined(Q_OS_MACOS)
-        if (region && systemRegion_)
-            return QStringLiteral("⌘⇧5");
-        return region ? QStringLiteral("⌘⌥⇧2") : QStringLiteral("⌘⌥⇧1");
-#else
-        if (region && systemRegion_) {
-#if defined(Q_OS_WIN)
-            return QStringLiteral("Win+S");
-#else
-            return QStringLiteral("Super+S");
-#endif
-        }
-        return region ? QStringLiteral("Ctrl+Alt+Shift+2") : QStringLiteral("Ctrl+Alt+Shift+1");
-#endif
+        return defaultKeys(region, systemRegion_ ? RegionShortcutPreset::System : RegionShortcutPreset::Standard);
     }
 
 private:
@@ -508,6 +495,24 @@ void GlobalShortcuts::start(RegionShortcutPreset preset)
 QString GlobalShortcuts::description(bool region) const
 {
     return backend_->description(region);
+}
+
+QString GlobalShortcuts::defaultKeys(bool region, RegionShortcutPreset preset)
+{
+    if (region && preset == RegionShortcutPreset::System) {
+#if defined(Q_OS_MACOS)
+        return QStringLiteral("⌘⇧5");
+#elif defined(Q_OS_WIN)
+        return QStringLiteral("Win+S");
+#else
+        return QStringLiteral("Super+S");
+#endif
+    }
+#if defined(Q_OS_MACOS)
+    return region ? QStringLiteral("⌘⌥⇧2") : QStringLiteral("⌘⌥⇧1");
+#else
+    return region ? QStringLiteral("Ctrl+Alt+Shift+2") : QStringLiteral("Ctrl+Alt+Shift+1");
+#endif
 }
 
 #if defined(Q_OS_LINUX)

@@ -6,7 +6,6 @@
 #include "settings.h"
 #include "settingswindow.h"
 
-#include <QComboBox>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>

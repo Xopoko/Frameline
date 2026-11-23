@@ -36,7 +36,6 @@ const Palette darkPalette{
     .onAccent = QColor(0x05, 0x24, 0x1a),
     .accentSoft = QColor(0x5f, 0xe3, 0xb5, 38),
     .warning = QColor(0xf5, 0xbd, 0x5c),
-    .warningSoft = QColor(0xf5, 0xbd, 0x5c, 36),
     .danger = QColor(0xff, 0x7a, 0x7a),
     .shadow = QColor(0, 0, 0, 120),
 };
@@ -60,7 +59,6 @@ const Palette lightPalette{
     .onAccent = QColor(0xff, 0xff, 0xff),
     .accentSoft = QColor(0x0a, 0x7a, 0x58, 30),
     .warning = QColor(0x94, 0x5d, 0x00),
-    .warningSoft = QColor(0xd9, 0x8e, 0x00, 34),
     .danger = QColor(0xc2, 0x2f, 0x3a),
     .shadow = QColor(0x1c, 0x28, 0x36, 46),
 };
@@ -97,18 +95,17 @@ constexpr auto sharedRules = R"(
     QLabel:disabled { color: @textFaint; }
     QLabel#title { font-size: 22px; font-weight: 600; }
     QLabel#heading { font-size: 15px; font-weight: 600; }
-    QLabel#body { font-size: 13px; }
     QLabel#muted { color: @textMuted; font-size: 13px; }
     QLabel#caption { color: @textMuted; font-size: 12px; }
     QLabel#emptyTitle { font-size: 18px; font-weight: 600; }
-    QLineEdit, QSpinBox {
+    QLineEdit {
         background: @inset; border: 1px solid @border; border-radius: 8px; padding: 6px 10px;
         color: @text; font-size: 13px; min-height: 18px;
         selection-background-color: @accent; selection-color: @onAccent;
     }
-    QLineEdit:hover, QSpinBox:hover { border-color: @borderStrong; }
-    QLineEdit:focus, QSpinBox:focus { border-color: @accent; }
-    QLineEdit:disabled, QSpinBox:disabled { color: @textFaint; background: @surface; }
+    QLineEdit:hover { border-color: @borderStrong; }
+    QLineEdit:focus { border-color: @accent; }
+    QLineEdit:disabled { color: @textFaint; background: @surface; }
     QScrollArea, QAbstractScrollArea { background: transparent; border: none; }
     QToolTip {
         background: @raised; color: @text; border: 1px solid @borderStrong; border-radius: 6px;
@@ -126,9 +123,9 @@ QString resolved(const QString &rules)
 {
     const Palette &c = colors();
     // Longer names first, so @border does not match inside @borderStrong.
-    const std::array<std::pair<const char *, QColor>, 19> entries{{
+    const std::array<std::pair<const char *, QColor>, 18> entries{{
         {"@controlPressed", c.controlPressed}, {"@controlHover", c.controlHover}, {"@borderStrong", c.borderStrong},
-        {"@accentHover", c.accentHover}, {"@warningSoft", c.warningSoft}, {"@accentSoft", c.accentSoft},
+        {"@accentHover", c.accentHover}, {"@accentSoft", c.accentSoft},
         {"@textMuted", c.textMuted}, {"@textFaint", c.textFaint}, {"@onAccent", c.onAccent},
         {"@surface", c.surface}, {"@control", c.control}, {"@warning", c.warning}, {"@accent", c.accent},
         {"@border", c.border}, {"@raised", c.raised}, {"@danger", c.danger}, {"@stage", c.stage},

@@ -15,14 +15,16 @@ Everything except `main.cpp` is built into the `frameline_core` static library, 
 | `settings`, `settingswindow` | `~/.frameline/settings.json`, library connection codes and the settings dialog. |
 | `platform/autostart` | Registers `--tray` at user login through Windows Run, a macOS LaunchAgent or XDG autostart on Linux. |
 | `libraryclient`, `librarywindow` | Upload queue, connection to the library and library browser. |
-| `libraryserver`, `tailscale` | Embedded library storage and API, plus detection of the private network for sharing. |
+| `libraryserver` | Embedded library storage and API. |
+| `libraryprotocol` | The token, screenshot ID and size rules that the client, the embedded server and the settings share. |
+| `tailscale`, `tailrelay` | Detection of the private network and its addresses, and the relay that keeps library connections on it. |
 | `theme` | Design tokens: light and dark palettes that follow the system, the type scale, the shared style sheet and painting helpers (shadows, viewfinder brackets, key caps). |
 | `controls` | Self-painted controls used by every window: buttons, toggle, segmented control, floating islands, toasts, banners and empty states. |
 | `pngexport` | PNG writing and the save dialog. |
 
 `tools/shots.cpp` builds `frameline_shots`, which renders every window and state to PNG for visual review: `frameline_shots <dir> [port token]` (pass a running library's port and token to include the grid and viewer), and `QT_QPA_PLATFORM=offscreen frameline_shots <dir> --region` for the selection overlay. The README demo is recorded with `--demo-editor` and, offscreen, `--demo-region`; each run writes numbered frames and a `frames.txt` with the pointer position per frame, for compositing into `docs/media/demo.gif`. `FRAMELINE_THEME=light` or `dark` overrides the system appearance.
 
-Platform code stays behind `#if defined(Q_OS_…)` in `capture`, `shortcuts` and `regionselector`, or in `src/platform`.
+Platform code sits behind `Q_OS_…` checks next to the feature it serves, or in `src/platform` when it needs a file of its own.
 
 ## Capturing
 

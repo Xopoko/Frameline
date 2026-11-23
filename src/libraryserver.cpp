@@ -1,6 +1,8 @@
 #include "libraryserver.h"
 
+#include "libraryprotocol.h"
 #include "tailrelay.h"
+#include "tailscale.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -31,8 +33,6 @@
 
 namespace {
 constexpr qint64 maxHeaders = 16 * 1024;
-constexpr qint64 maxImage = 64 * 1024 * 1024;
-constexpr qint64 maxThumbnail = 2 * 1024 * 1024;
 constexpr qint64 chunkSize = 64 * 1024;
 constexpr int maxConnections = 8;
 constexpr int headerTimeout = 10000;
@@ -46,26 +46,16 @@ const QByteArray jpegType = "image/jpeg";
 
 using Headers = QHash<QByteArray, QByteArray>;
 using OrderKey = QPair<QString, QString>;
+using LibraryProtocol::isImageSize;
+using LibraryProtocol::isScreenshotId;
+using LibraryProtocol::maxImageBytes;
+using LibraryProtocol::maxThumbnailBytes;
 
 bool report(QString *error, const QString &message)
 {
     if (error)
         *error = message;
     return message.isEmpty();
-}
-
-bool isId(const QString &id)
-{
-    static const QRegularExpression pattern(QStringLiteral("\\A[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\\z"));
-    return pattern.match(id).hasMatch();
-}
-
-bool isTailAddress(const QHostAddress &address)
-{
-    if (!address.scopeId().isEmpty())
-        return false;
-    return address.isInSubnet(QHostAddress(QStringLiteral("100.64.0.0")), 10)
-        || address.isInSubnet(QHostAddress(QStringLiteral("fd7a:115c:a1e0::")), 48);
 }
 
 bool sameSecret(const QByteArray &candidate, const QByteArray &secret)
@@ -92,12 +82,6 @@ QString normalizedTime(const QString &value)
         return {};
     const auto time = QDateTime::fromString(value, Qt::ISODateWithMs);
     return time.isValid() ? time.toUTC().toString(Qt::ISODateWithMs) : QString{};
-}
-
-bool validDimensions(const QSize &size)
-{
-    return size.width() > 0 && size.height() > 0 && size.width() <= 32768 && size.height() <= 32768
-        && qint64(size.width()) * size.height() <= 100'000'000;
 }
 
 bool validDevice(const QString &value)
@@ -132,7 +116,7 @@ bool decodeCursor(const QString &value, OrderKey &key)
     if (!decoded)
         return false;
     const auto parts = QString::fromLatin1(decoded.decoded).split(u'/');
-    if (parts.size() != 2 || parts[0].isEmpty() || normalizedTime(parts[0]) != parts[0] || !isId(parts[1]))
+    if (parts.size() != 2 || parts[0].isEmpty() || normalizedTime(parts[0]) != parts[0] || !isScreenshotId(parts[1]))
         return false;
     key = {parts[0], parts[1]};
     return true;
@@ -257,7 +241,7 @@ struct LibraryServer::State {
     {
         while (auto *socket = listener.nextPendingConnection()) {
             const auto peer = socket->peerAddress();
-            const bool allowed = shared ? isTailAddress(peer) && authorizePeer
+            const bool allowed = shared ? isTailscaleAddress(peer) && authorizePeer
                                              && authorizePeer(socket->localAddress().toString(), peer.toString())
                                              && pinTailInterface(socket->socketDescriptor(), socket->localAddress())
                                         : peer.isLoopback();
@@ -292,7 +276,7 @@ struct LibraryServer::State {
                 QDir(entry.filePath()).removeRecursively();
                 continue;
             }
-            if (!isId(id))
+            if (!isScreenshotId(id))
                 continue;
             const QDir capture(entry.filePath());
             const QFileInfo image(capture.filePath(originalName));
@@ -305,7 +289,7 @@ struct LibraryServer::State {
             const auto hash = QByteArray::fromHex(object.take(QStringLiteral("imageSha256")).toString().toLatin1());
             const auto time = object.value(QStringLiteral("capturedAt")).toString();
             if (time.isEmpty() || normalizedTime(time) != time || hash.size() != 32
-                || !validDimensions({object.value(QStringLiteral("width")).toInt(), object.value(QStringLiteral("height")).toInt()})
+                || !isImageSize({object.value(QStringLiteral("width")).toInt(), object.value(QStringLiteral("height")).toInt()})
                 || !validDevice(object.value(QStringLiteral("device")).toString())
                 || !validKind(object.value(QStringLiteral("kind")).toString()))
                 continue;
@@ -446,7 +430,7 @@ void LibraryServer::State::Connection::route(const QByteArray &method, const QUr
         return;
     }
     id = parts[0];
-    if (!isId(id)) {
+    if (!isScreenshotId(id)) {
         fail(400, QStringLiteral("Invalid screenshot ID."));
         return;
     }
@@ -471,7 +455,7 @@ void LibraryServer::State::Connection::beginUpload(const Headers &headers)
     }
     bool parsed = false;
     remaining = length.toLongLong(&parsed);
-    if (!parsed || remaining <= 0 || remaining > (thumbnail ? maxThumbnail : maxImage)) {
+    if (!parsed || remaining <= 0 || remaining > (thumbnail ? maxThumbnailBytes : maxImageBytes)) {
         fail(413, QStringLiteral("Image exceeds allowed size."));
         return;
     }
@@ -487,7 +471,7 @@ void LibraryServer::State::Connection::beginUpload(const Headers &headers)
         const auto device = QString::fromLatin1(headers.value("x-screenframe-device"));
         const auto kind = QString::fromLatin1(headers.value("x-screenframe-kind"));
         const QSize size(width.toInt(), height.toInt());
-        if (time.isEmpty() || !digits(width, 5) || !digits(height, 5) || !validDimensions(size)
+        if (time.isEmpty() || !digits(width, 5) || !digits(height, 5) || !isImageSize(size)
             || !validDevice(device) || !validKind(kind)) {
             fail(400, QStringLiteral("Invalid screenshot metadata."));
             return;
@@ -549,7 +533,7 @@ void LibraryServer::State::Connection::finishUpload()
         return;
     }
     const auto size = imageSize(staged, type);
-    if (!validDimensions(size) || (thumbnail && std::max(size.width(), size.height()) > 1024)
+    if (!isImageSize(size) || (thumbnail && std::max(size.width(), size.height()) > 1024)
         || (!thumbnail && size != QSize(metadata.value(QStringLiteral("width")).toInt(),
                                         metadata.value(QStringLiteral("height")).toInt()))) {
         fail(400, QStringLiteral("Invalid image or mismatched dimensions."));
@@ -620,7 +604,7 @@ void LibraryServer::State::Connection::sendImage()
         return;
     }
     const auto length = download.size();
-    if (length <= 0 || length > (thumbnail ? maxThumbnail : maxImage)) {
+    if (length <= 0 || length > (thumbnail ? maxThumbnailBytes : maxImageBytes)) {
         fail(500, QStringLiteral("Library storage failed."));
         return;
     }
@@ -720,8 +704,7 @@ bool LibraryServer::start(const QString &dataDir, const QString &token, quint16 
 {
     if (d->local.isListening())
         return report(error, QStringLiteral("The library is already running."));
-    static const QRegularExpression tokenPattern(QStringLiteral("\\A[A-Za-z0-9_-]{32,256}\\z"));
-    if (!tokenPattern.match(token).hasMatch())
+    if (!LibraryProtocol::isToken(token))
         return report(error, QStringLiteral("The library access token is invalid."));
     if (dataDir.isEmpty() || !QDir::isAbsolutePath(dataDir) || QDir(dataDir).isRoot()
         || !QDir().mkpath(dataDir) || QFileInfo(dataDir).isSymLink())
@@ -786,7 +769,7 @@ bool LibraryServer::setShareAddress(const QString &address, QString *error)
     if (address.isEmpty())
         return report(error, {});
     const QHostAddress host(address);
-    if (!port() || !d->authorizePeer || !isTailAddress(host))
+    if (!port() || !d->authorizePeer || !isTailscaleAddress(host))
         return report(error, QStringLiteral("Connect Tailscale on this computer to share the library."));
     if (!d->share.listen(host, port()))
         return report(error, QStringLiteral("Could not share the library on Tailscale. %1").arg(d->share.errorString()));

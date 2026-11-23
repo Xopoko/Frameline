@@ -48,7 +48,6 @@ QString defaultSettingsDirectory();
 QString defaultHostedLibraryDirectory(const QString &settingsDirectory = defaultSettingsDirectory());
 QString defaultLibraryDeviceName();
 QString generateLibraryToken();
-bool isTailscaleAddress(const QString &address);
 QString libraryConnectionCode(const LibrarySettings &settings);
 std::optional<LibrarySettings> librarySettingsFromConnectionCode(const QString &code, const QString &device,
                                                                QString *error = nullptr);

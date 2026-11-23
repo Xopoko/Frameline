@@ -1,5 +1,6 @@
 #include "libraryclient.h"
 
+#include "libraryprotocol.h"
 #include "libraryserver.h"
 #include "pngexport.h"
 #include "tailrelay.h"
@@ -37,14 +38,10 @@
 #include <utility>
 
 namespace {
-constexpr qint64 maxImage = 64 * 1024 * 1024;
-constexpr qint64 maxThumbnail = 2 * 1024 * 1024;
-constexpr auto readyMarker = "frameline-ready";
+using LibraryProtocol::isScreenshotId;
 
-bool isId(const QString &id)
-{
-    return id.size() == 36 && !QUuid(id).isNull() && QUuid(id).toString(QUuid::WithoutBraces) == id;
-}
+// The remote end of the SSH tunnel prints this line once the forwarded port is ready.
+constexpr auto readyMarker = "frameline-ready";
 
 bool writeBytes(const QString &path, const QByteArray &bytes)
 {
@@ -57,7 +54,7 @@ bool writeBytes(const QString &path, const QByteArray &bytes)
 
 QString stageCapture(const QString &queue, const QString &id, const QImage &image, const QJsonObject &metadata)
 {
-    if (image.width() > 32768 || image.height() > 32768 || qint64(image.width()) * image.height() > 100'000'000)
+    if (!LibraryProtocol::isImageSize(image.size()))
         return QStringLiteral("The screenshot is too large for the shared library.");
     if (!QDir().mkpath(queue))
         return QStringLiteral("Could not create the local screenshot queue.");
@@ -72,7 +69,7 @@ QString stageCapture(const QString &queue, const QString &id, const QImage &imag
     const QString original = staging.filePath(QStringLiteral("image.png"));
     if (!savePng(image, original, &error))
         return QStringLiteral("Could not queue the screenshot. %1").arg(error);
-    if (QFileInfo(original).size() > maxImage)
+    if (QFileInfo(original).size() > LibraryProtocol::maxImageBytes)
         return QStringLiteral("The encoded screenshot exceeds the library's 64 MiB limit.");
 
     const QImage thumb = image.width() > 360 || image.height() > 240
@@ -128,8 +125,7 @@ struct LibraryClient::State : QObject {
         network.setProxy(QNetworkProxy::NoProxy);
         if (transport == LibraryTransport::Local && !token.isEmpty()) {
             const auto hosted = loadSettings(settingsDirectory).hostedLibrary;
-            if (hosted.token.toLatin1() == token && hosted.port == port)
-                managedDirectory = hosted.directory;
+            forHostedLibrary = hosted.token.toLatin1() == token && hosted.port == port;
         }
         if (transport == LibraryTransport::Tailscale && !token.isEmpty()) {
             tailscale = std::make_unique<TailscaleMonitor>();
@@ -192,7 +188,7 @@ struct LibraryClient::State : QObject {
     QStringList queuedIds() const
     {
         auto entries = QDir(queue).entryList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks, QDir::Time | QDir::Reversed);
-        entries.removeIf([](const QString &id) { return !isId(id); });
+        entries.removeIf([](const QString &id) { return !isScreenshotId(id); });
         return entries;
     }
 
@@ -290,7 +286,7 @@ struct LibraryClient::State : QObject {
             if (!error.isEmpty())
                 return error;
             const bool matchesHost = hosted.port == port && hosted.token.toLatin1() == token;
-            if ((!managedDirectory.isEmpty() || matchesHost) && (!matchesHost || !hosted.enabled
+            if ((forHostedLibrary || matchesHost) && (!matchesHost || !hosted.enabled
                 || !LibraryServer::isRunning(hosted.directory)))
                 return QStringLiteral("Open Frameline on the computer that hosts the library.");
         }
@@ -353,7 +349,7 @@ struct LibraryClient::State : QObject {
                           QStringLiteral("-o"), QStringLiteral("ServerAliveInterval=15"),
                           QStringLiteral("-o"), QStringLiteral("ServerAliveCountMax=2"),
                           QStringLiteral("-L"), QStringLiteral("127.0.0.1:%1:127.0.0.1:%2").arg(localPort).arg(port),
-                          host, QStringLiteral("printf 'frameline-ready\\n'; exec cat")});
+                          host, QStringLiteral("printf '%1\\n'; exec cat").arg(QLatin1String(readyMarker))});
         timeout.start(8000);
         ssh.start();
     }
@@ -612,7 +608,8 @@ struct LibraryClient::State : QObject {
     const QString device;
     const QByteArray token;
     const bool autoArchive;
-    QString managedDirectory;
+    // This client was created for the library that Frameline hosts on this computer.
+    bool forHostedLibrary = false;
     QThreadPool writer;
     QList<Write> writes;
     QNetworkAccessManager network;
@@ -712,7 +709,7 @@ void LibraryClient::list(const QString &cursor, QObject *context, ListCallback c
         for (const auto &entry : page.value(QStringLiteral("items")).toArray()) {
             const auto item = entry.toObject();
             const QString id = item.value(QStringLiteral("id")).toString();
-            if (!isId(id))
+            if (!isScreenshotId(id))
                 continue;
             items.append({id, QDateTime::fromString(item.value(QStringLiteral("capturedAt")).toString(), Qt::ISODateWithMs),
                           {item.value(QStringLiteral("width")).toInt(), item.value(QStringLiteral("height")).toInt()},
@@ -725,14 +722,15 @@ void LibraryClient::list(const QString &cursor, QObject *context, ListCallback c
 
 void LibraryClient::image(const QString &id, bool thumbnail, QObject *context, ImageCallback callback)
 {
-    if (!isId(id)) {
+    if (!isScreenshotId(id)) {
         callback({}, QStringLiteral("Invalid screenshot ID."));
         return;
     }
     const QPointer<QObject> guard(context);
     const QString part = thumbnail ? QStringLiteral("thumbnail") : QStringLiteral("image");
-    d->download(QStringLiteral("/v1/screenshots/%1/%2").arg(id, part), {}, thumbnail ? maxThumbnail : maxImage,
-                context, [this, guard, callback = std::move(callback)](Download response) {
+    const qint64 limit = thumbnail ? LibraryProtocol::maxThumbnailBytes : LibraryProtocol::maxImageBytes;
+    d->download(QStringLiteral("/v1/screenshots/%1/%2").arg(id, part), {}, limit, context,
+                [this, guard, callback = std::move(callback)](Download response) {
         if (!response.error.isEmpty()) {
             callback({}, response.error);
             return;

@@ -3,6 +3,7 @@
 #include "controls.h"
 #include "platform/autostart.h"
 #include "settings.h"
+#include "shortcuts.h"
 #include "tailscale.h"
 #include "theme.h"
 
@@ -27,31 +28,26 @@
 namespace {
 
 constexpr auto settingsRules = R"(
-    QLabel#sectionTitle { font-size: 15px; font-weight: 600; }
-    QLabel#rowLabel { font-size: 13px; }
     QWidget#footer { background: @surface; border-top: 1px solid @border; }
 )";
 
+QString regionKeys(bool system)
+{
+    return GlobalShortcuts::defaultKeys(true, system ? RegionShortcutPreset::System : RegionShortcutPreset::Standard);
+}
+
+// What moving region capture to the system key involves on this platform.
+QString takeoverDetails()
+{
 #if defined(Q_OS_WIN)
-const auto fullKeys = QStringLiteral("Ctrl+Alt+Shift+1");
-const auto regionKeys = QStringLiteral("Ctrl+Alt+Shift+2");
-const auto systemKeys = QStringLiteral("Win+S");
-const auto takeoverText = QStringLiteral("Use Win+S for region capture");
-const auto takeoverDetails = QStringLiteral("While Frameline is running, Win+S opens region capture in place of Windows Search.");
+    return QStringLiteral("While Frameline is running, %1 opens region capture in place of Windows Search.").arg(regionKeys(true));
 #elif defined(Q_OS_MACOS)
-const auto fullKeys = QStringLiteral("⌘⌥⇧1");
-const auto regionKeys = QStringLiteral("⌘⌥⇧2");
-const auto systemKeys = QStringLiteral("⌘⇧5");
-const auto takeoverText = QStringLiteral("Use ⌘⇧5 for region capture");
-const auto takeoverDetails = QStringLiteral("First turn off Screenshot and recording options in System Settings → Keyboard → "
-                                            "Keyboard Shortcuts → Screenshots.");
+    return QStringLiteral("First turn off Screenshot and recording options in System Settings → Keyboard → "
+                          "Keyboard Shortcuts → Screenshots.");
 #else
-const auto fullKeys = QStringLiteral("Ctrl+Alt+Shift+1");
-const auto regionKeys = QStringLiteral("Ctrl+Alt+Shift+2");
-const auto systemKeys = QStringLiteral("Super+S");
-const auto takeoverText = QStringLiteral("Use Super+S for region capture");
-const auto takeoverDetails = QStringLiteral("If another app uses Super+S, free it in your desktop’s keyboard settings.");
+    return QStringLiteral("If another app uses %1, free it in your desktop’s keyboard settings.").arg(regionKeys(true));
 #endif
+}
 
 QLabel *paragraph(const QString &text, const char *role, QWidget *parent)
 {
@@ -82,7 +78,7 @@ public:
         auto *layout = new QHBoxLayout(row);
         layout->setContentsMargins(0, 9, 0, 9);
         layout->setSpacing(16);
-        auto *caption = theme::label(title, "rowLabel", row);
+        auto *caption = theme::label(title, "body", row);
         caption->setFixedWidth(118);
         caption->setBuddy(field);
         layout->addWidget(caption);
@@ -97,7 +93,7 @@ public:
         auto *row = new QWidget(this);
         auto *layout = new QHBoxLayout(row);
         layout->setContentsMargins(0, 12, 0, 12);
-        layout->addWidget(theme::label(title, "rowLabel", row), 1);
+        layout->addWidget(theme::label(title, "body", row), 1);
         keys->setParent(row);
         layout->addWidget(keys);
         column->addWidget(row);
@@ -290,7 +286,7 @@ struct SettingsWindow::Ui {
 
     void addStartup(QVBoxLayout *column)
     {
-        column->addWidget(theme::label(QStringLiteral("Startup"), "sectionTitle", page));
+        column->addWidget(theme::label(QStringLiteral("Startup"), "heading", page));
         column->addSpacing(10);
         auto *group = new Group(page);
         autostart = new Toggle(QStringLiteral("Start Frameline when I sign in"));
@@ -308,30 +304,30 @@ struct SettingsWindow::Ui {
 
     void addCapture(QVBoxLayout *column)
     {
-        column->addWidget(theme::label(QStringLiteral("Capture"), "sectionTitle", page));
+        column->addWidget(theme::label(QStringLiteral("Capture"), "heading", page));
         column->addSpacing(12);
         auto *group = new Group(page);
         autoCopyScreenshot = new Toggle(QStringLiteral("Copy screenshots to clipboard"));
         autoCopyScreenshot->setObjectName(QStringLiteral("autoCopyScreenshot"));
         autoCopyScreenshot->setChecked(saved.autoCopyScreenshot);
         group->addWidgetRow(autoCopyScreenshot);
-        const bool useSystemRegionShortcut = saved.useSystemRegionShortcut;
-        regionCap = new Keycap(useSystemRegionShortcut ? systemKeys : regionKeys);
+        regionCap = new Keycap(regionKeys(saved.useSystemRegionShortcut));
         group->addKeyRow(QStringLiteral("Capture a region"), regionCap);
-        group->addKeyRow(QStringLiteral("Capture the screen"), new Keycap(fullKeys));
-        takeover = new Toggle(takeoverText);
-        takeover->setChecked(useSystemRegionShortcut);
+        group->addKeyRow(QStringLiteral("Capture the screen"),
+                         new Keycap(GlobalShortcuts::defaultKeys(false, RegionShortcutPreset::Standard)));
+        takeover = new Toggle(QStringLiteral("Use %1 for region capture").arg(regionKeys(true)));
+        takeover->setChecked(saved.useSystemRegionShortcut);
         group->addWidgetRow(takeover);
         column->addWidget(group);
         column->addSpacing(8);
-        column->addWidget(paragraph(takeoverDetails + QStringLiteral(" Changes apply after Frameline restarts."), "caption", page));
+        column->addWidget(paragraph(takeoverDetails() + QStringLiteral(" Changes apply after Frameline restarts."), "caption", page));
         QObject::connect(takeover, &QAbstractButton::toggled, &dialog,
-                         [this](bool checked) { regionCap->setKeys(checked ? systemKeys : regionKeys); });
+                         [this](bool checked) { regionCap->setKeys(regionKeys(checked)); });
     }
 
     void addLibrary(QVBoxLayout *column)
     {
-        column->addWidget(theme::label(QStringLiteral("Shared library"), "sectionTitle", page));
+        column->addWidget(theme::label(QStringLiteral("Shared library"), "heading", page));
         column->addSpacing(4);
         column->addWidget(paragraph(QStringLiteral("Keep screenshots from your devices together on a computer you choose."),
                                     "muted", page));

@@ -318,36 +318,6 @@ protected:
     }
 };
 
-// A widget whose owner lays out its children by hand.
-class Frame final : public QWidget {
-public:
-    using QWidget::QWidget;
-    std::function<void()> onResize;
-
-protected:
-    void resizeEvent(QResizeEvent *event) override
-    {
-        QWidget::resizeEvent(event);
-        if (onResize) {
-            onResize();
-        }
-    }
-};
-
-class TopBar final : public QWidget {
-public:
-    using QWidget::QWidget;
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        const theme::Palette &c = theme::colors();
-        QPainter painter(this);
-        painter.fillRect(rect(), c.surface);
-        painter.fillRect(QRectF(0, height() - 1, width(), 1), c.border);
-    }
-};
-
 class Brand final : public QWidget {
 public:
     explicit Brand(QWidget *parent) : QWidget(parent)
@@ -595,7 +565,7 @@ struct EditorWindow::Ui {
         pages = new QStackedWidget(stage);
         pages->addWidget(makeLauncher());
         pages->addWidget(makeEditor());
-        toast = new Notice(Notice::Success, stage);
+        toast = new Notice(stage);
         QObject::connect(toast, &Notice::messageChanged, &window, [this] { layoutStage(); });
         stage->onResize = [this] { layoutStage(); };
 

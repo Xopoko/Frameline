@@ -559,17 +559,12 @@ void Island::addSeparator()
     row_->addWidget(new Separator(this));
 }
 
-QRectF Island::panel() const
-{
-    return QRectF(rect()).adjusted(shadowMargin, shadowMargin, -shadowMargin, -shadowMargin);
-}
-
 void Island::paintEvent(QPaintEvent *)
 {
     const theme::Palette &c = theme::colors();
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    const QRectF body = panel();
+    const QRectF body = QRectF(rect()).adjusted(shadowMargin, shadowMargin, -shadowMargin, -shadowMargin);
     theme::paintShadow(painter, body, 14, 10, 3, c.dark ? 1.4 : 1);
     painter.setPen(QPen(c.dark ? c.border : theme::withAlpha(c.borderStrong, 0.6), 1));
     painter.setBrush(c.raised);
@@ -584,7 +579,7 @@ void Island::mousePressEvent(QMouseEvent *event)
 
 // MARK: Notice
 
-Notice::Notice(Tone tone, QWidget *parent) : QWidget(parent), tone_(tone), fade_(animation(this, 160)), hold_(new QTimer(this))
+Notice::Notice(QWidget *parent) : QWidget(parent), fade_(animation(this, 160)), hold_(new QTimer(this))
 {
     setAttribute(Qt::WA_TransparentForMouseEvents);
     hide();
@@ -603,20 +598,6 @@ Notice::Notice(Tone tone, QWidget *parent) : QWidget(parent), tone_(tone), fade_
         fade_->setDuration(320);
         animateTo(fade_, opacity_, 0.0);
     });
-}
-
-void Notice::setMessage(const QString &message)
-{
-    hold_->stop();
-    fade_->stop();
-    opacity_ = 1;
-    message_ = message;
-    setVisible(!message.isEmpty());
-    if (!message.isEmpty()) {
-        raise();
-    }
-    update();
-    emit messageChanged();
 }
 
 void Notice::flash(const QString &message)
@@ -650,16 +631,33 @@ void Notice::paintEvent(QPaintEvent *)
     const QRectF body = QRectF(rect()).adjusted(shadowMargin, shadowMargin, -shadowMargin, -shadowMargin);
     const qreal radius = body.height() <= 40 ? body.height() / 2 : 14;
     theme::paintShadow(painter, body, radius, 8, 2, c.dark ? 1.3 : 0.9);
-    const bool warning = tone_ == Warning;
-    painter.setPen(QPen(warning ? theme::withAlpha(c.warning, 0.4) : c.border, 1));
-    painter.setBrush(warning ? theme::mix(c.raised, c.warning, c.dark ? 0.13 : 0.09) : c.raised);
+    painter.setPen(QPen(c.border, 1));
+    painter.setBrush(c.raised);
     painter.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
     const QRectF icon(body.left() + 16, body.top() + 10, 16, 16);
-    paintIcon(painter, warning ? Icon::Warning : Icon::Check, icon, warning ? c.warning : c.accent, 1.8);
+    paintIcon(painter, Icon::Check, icon, c.accent, 1.8);
     painter.setPen(c.text);
     painter.setFont(theme::font(13, theme::Weight::Medium));
     const QRectF text = body.adjusted(16 + 16 + 8, 9, -16, -9);
     painter.drawText(text, Qt::TextWordWrap | Qt::AlignVCenter | Qt::AlignLeft, message_);
+}
+
+// MARK: TopBar and Frame
+
+void TopBar::paintEvent(QPaintEvent *)
+{
+    const theme::Palette &c = theme::colors();
+    QPainter painter(this);
+    painter.fillRect(rect(), c.surface);
+    painter.fillRect(QRectF(0, height() - 1, width(), 1), c.border);
+}
+
+void Frame::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    if (onResize) {
+        onResize();
+    }
 }
 
 // MARK: Banner

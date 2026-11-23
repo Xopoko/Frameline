@@ -410,34 +410,7 @@ private:
     }
 };
 
-class Bar final : public QWidget {
-public:
-    explicit Bar(QWidget *parent) : QWidget(parent) { setFixedHeight(56); }
-
-protected:
-    void paintEvent(QPaintEvent *) override
-    {
-        const theme::Palette &c = theme::colors();
-        QPainter painter(this);
-        painter.fillRect(rect(), c.surface);
-        painter.fillRect(QRectF(0, height() - 1, width(), 1), c.border);
-    }
-};
-
-class Overlay final : public QWidget {
-public:
-    using QWidget::QWidget;
-    std::function<void()> onResize;
-
-protected:
-    void resizeEvent(QResizeEvent *event) override
-    {
-        QWidget::resizeEvent(event);
-        if (onResize) {
-            onResize();
-        }
-    }
-};
+constexpr int barHeight = 56;
 
 constexpr auto libraryRules = R"(
     QListView { background: @stage; border: none; outline: none; }
@@ -576,7 +549,8 @@ struct LibraryWindow::Ui {
         auto *column = new QVBoxLayout(page);
         column->setContentsMargins(0, 0, 0, 0);
         column->setSpacing(0);
-        auto *bar = new Bar(page);
+        auto *bar = new TopBar(page);
+        bar->setFixedHeight(barHeight);
         auto *header = new QHBoxLayout(bar);
         header->setContentsMargins(20, 0, 12, 0);
         header->setSpacing(4);
@@ -632,7 +606,8 @@ struct LibraryWindow::Ui {
         auto *column = new QVBoxLayout(page);
         column->setContentsMargins(0, 0, 0, 0);
         column->setSpacing(0);
-        auto *bar = new Bar(page);
+        auto *bar = new TopBar(page);
+        bar->setFixedHeight(barHeight);
         auto *row = new QHBoxLayout(bar);
         row->setContentsMargins(10, 0, 12, 0);
         row->setSpacing(4);
@@ -682,7 +657,7 @@ struct LibraryWindow::Ui {
         row->addWidget(saveButton);
         column->addWidget(bar);
 
-        auto *area = new Overlay(page);
+        auto *area = new Frame(page);
         viewerContent = new QStackedWidget(area);
         viewerState = new EmptyState(viewerContent);
         viewerState->setObjectName(QStringLiteral("stage"));
@@ -691,7 +666,7 @@ struct LibraryWindow::Ui {
         viewerContent->addWidget(viewerState);
         imageView = new ImageView(viewerContent);
         viewerContent->addWidget(imageView);
-        viewerToast = new Notice(Notice::Success, area);
+        viewerToast = new Notice(area);
         const auto place = [this, area] {
             viewerContent->setGeometry(area->rect());
             if (viewerToast->isVisible()) {

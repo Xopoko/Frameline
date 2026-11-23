@@ -33,7 +33,6 @@ struct Palette {
     QColor onAccent;
     QColor accentSoft;     // Selection fill.
     QColor warning;
-    QColor warningSoft;
     QColor danger;
     QColor shadow;
 };
@@ -65,13 +64,13 @@ enum class Weight { Regular, Medium, Semibold };
 // The interface font at a pixel size. Tabular figures keep changing numbers from jittering.
 QFont font(int pixelSize, Weight weight = Weight::Regular, bool tabular = false);
 
-// Creates a plain-text label. The role is the object name the style sheet selects on:
-// title, heading, body, muted or caption.
+// Creates a plain-text label. The role is the object name the style sheet selects on. The shared
+// sheet styles title, heading, muted, caption and emptyTitle; any other role keeps the base style
+// unless the window's own rules name it.
 QLabel *label(const QString &text, const char *role, QWidget *parent);
 
 // A soft drop shadow around a rounded rectangle.
-void paintShadow(QPainter &painter, const QRectF &rect, qreal cornerRadius, int spread = 12, qreal offset = 3,
-                 qreal strength = 1);
+void paintShadow(QPainter &painter, const QRectF &rect, qreal cornerRadius, int spread, qreal offset, qreal strength);
 
 // The viewfinder corners from the app icon, drawn just inside rect.
 void paintBrackets(QPainter &painter, const QRectF &rect, qreal length, qreal width, const QColor &color);

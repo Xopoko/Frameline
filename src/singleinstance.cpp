@@ -21,6 +21,10 @@
 #include <unistd.h>
 #endif
 
+#include <array>
+#include <optional>
+#include <utility>
+
 namespace {
 constexpr int activationTimeoutMs = 2500;
 constexpr char acknowledged = 'K';
@@ -66,15 +70,30 @@ QString endpointName(const QString &directory)
 #endif
 }
 
+// The byte a launching process sends to the running one for each request.
+constexpr std::array<std::pair<SingleInstance::Request, char>, 4> requestCodes{{
+    {SingleInstance::Request::Editor, 'E'},
+    {SingleInstance::Request::Library, 'L'},
+    {SingleInstance::Request::Settings, 'S'},
+    {SingleInstance::Request::Quiet, 'Q'},
+}};
+
 char encodeRequest(SingleInstance::Request request)
 {
-    switch (request) {
-    case SingleInstance::Request::Editor: return 'E';
-    case SingleInstance::Request::Library: return 'L';
-    case SingleInstance::Request::Settings: return 'S';
-    case SingleInstance::Request::Quiet: return 'Q';
+    for (const auto &[candidate, code] : requestCodes) {
+        if (candidate == request)
+            return code;
     }
     return '\0';
+}
+
+std::optional<SingleInstance::Request> decodeRequest(char code)
+{
+    for (const auto &[request, candidate] : requestCodes) {
+        if (candidate == code)
+            return request;
+    }
+    return {};
 }
 
 void allowActivation(QLocalSocket &socket, SingleInstance::Request request)
@@ -184,7 +203,8 @@ void SingleInstance::readRequest(QLocalSocket *socket)
     char command = 0;
     if (socket->state() != QLocalSocket::ConnectedState || socket->read(&command, 1) != 1)
         return;
-    if (command != 'E' && command != 'L' && command != 'S' && command != 'Q') {
+    const auto request = decodeRequest(command);
+    if (!request) {
         socket->abort();
         return;
     }
@@ -192,9 +212,6 @@ void SingleInstance::readRequest(QLocalSocket *socket)
     disconnect(socket, nullptr, this, nullptr);
     // Let the client close after reading the reply. Closing a Windows pipe here can discard unread bytes.
     socket->write(&acknowledged, 1);
-    switch (command) {
-    case 'E': emit activationRequested(Request::Editor); break;
-    case 'L': emit activationRequested(Request::Library); break;
-    case 'S': emit activationRequested(Request::Settings); break;
-    }
+    if (*request != Request::Quiet)
+        emit activationRequested(*request);
 }

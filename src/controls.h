@@ -5,6 +5,8 @@
 #include <QStringList>
 #include <QWidget>
 
+#include <functional>
+
 class QHBoxLayout;
 class QLabel;
 class QTimer;
@@ -92,7 +94,6 @@ public:
     explicit Segmented(const QStringList &labels, QWidget *parent = nullptr);
 
     int current() const { return current_; }
-    QString currentText() const { return labels_.value(current_); }
     void setCurrent(int index);
 
     QSize sizeHint() const override;
@@ -126,8 +127,6 @@ public:
 
     QHBoxLayout *row() const { return row_; }
     void addSeparator();
-    // The panel without its shadow, in this widget's coordinates.
-    QRectF panel() const;
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -139,19 +138,15 @@ private:
     QHBoxLayout *row_;
 };
 
-// A message pill. It can stay up as a notice or appear briefly as a toast.
+// A toast: a pill that confirms an action and fades out.
 class Notice final : public QWidget {
     Q_OBJECT
 
 public:
-    enum Tone { Success, Warning };
-
-    explicit Notice(Tone tone, QWidget *parent = nullptr);
+    explicit Notice(QWidget *parent = nullptr);
 
     static constexpr int shadowMargin = 8;
 
-    void setMessage(const QString &message);
-    QString message() const { return message_; }
     // Shows the message, then fades it out.
     void flash(const QString &message);
     // The size the notice needs, shadow included, when it may be at most maxWidth wide.
@@ -164,11 +159,29 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
-    Tone tone_;
     QString message_;
     QVariantAnimation *fade_;
     QTimer *hold_;
     qreal opacity_ = 1;
+};
+
+// The strip of controls along the top of a window, with a hairline under it.
+class TopBar final : public QWidget {
+public:
+    using QWidget::QWidget;
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+};
+
+// A container whose owner lays out the children by hand.
+class Frame final : public QWidget {
+public:
+    using QWidget::QWidget;
+    std::function<void()> onResize;
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
 };
 
 // A full-width warning strip for a problem that persists, such as a shortcut another app owns.

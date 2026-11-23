@@ -6,6 +6,14 @@
 #include <QStringList>
 #include <QTimer>
 
+class QHostAddress;
+
+// Tailscale gives devices addresses in 100.64.0.0/10 and fd7a:115c:a1e0::/48.
+bool isTailscaleAddress(const QHostAddress &address);
+// The canonical text of a Tailscale address. Empty for anything else, including host names,
+// scoped addresses and IPv4 addresses with another spelling.
+QString normalizedTailscaleAddress(const QString &address);
+
 enum class TailscaleState { Checking, Missing, Stopped, Ready };
 
 struct TailscaleStatus {

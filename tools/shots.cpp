@@ -1,5 +1,6 @@
-// Developer tool: renders Frameline's windows to PNG files for visual review.
-// Usage: frameline_shots <output-directory> [library-port library-token]
+// Developer tool: renders Frameline's windows to PNG files for visual review and records the
+// frames of the README demo.
+// Usage: frameline_shots <output-directory> [<library-port> <library-token> | --region | --demo-editor | --demo-region]
 #include "editor.h"
 #include "regionselector.h"
 #include "libraryclient.h"
@@ -12,8 +13,8 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QDir>
-#include <QFile>
 #include <QEasingCurve>
+#include <QFile>
 #include <QLineEdit>
 #include <QListView>
 #include <QPainter>
@@ -24,16 +25,25 @@
 namespace {
 
 QString outputDirectory;
+bool saveFailed = false;
 
 void settle(int ms = 350)
 {
     QTest::qWait(ms);
 }
 
+void save(QWidget &window, const QString &path)
+{
+    if (!window.grab().save(path)) {
+        qWarning("Could not write %s", qPrintable(path));
+        saveFailed = true;
+    }
+}
+
 void shoot(QWidget &window, const QString &name)
 {
     settle();
-    window.grab().save(QDir(outputDirectory).filePath(name + QStringLiteral(".png")));
+    save(window, QDir(outputDirectory).filePath(name + QStringLiteral(".png")));
 }
 
 void present(QWidget &window, QSize size)
@@ -140,13 +150,14 @@ void click(QWidget &window, const QString &name)
     }
 }
 
-QWidget *canvasOf(QWidget &window)
+QWidget *namedWidget(QWidget &window, const QString &name)
 {
     for (auto *widget : window.findChildren<QWidget *>()) {
-        if (widget->accessibleName() == QStringLiteral("Screenshot")) {
+        if (widget->isVisible() && (widget->accessibleName() == name)) {
             return widget;
         }
     }
+    qWarning("No widget named %s", qPrintable(name));
     return nullptr;
 }
 
@@ -173,7 +184,7 @@ void editorShots()
     editor.setCapture(sampleCapture());
     shoot(editor, QStringLiteral("02-editor-fresh"));
 
-    if (auto *canvas = canvasOf(editor)) {
+    if (auto *canvas = namedWidget(editor, QStringLiteral("Screenshot"))) {
         drag(canvas, {0.20, 0.30}, {0.37, 0.50});
         click(editor, QStringLiteral("Rectangle"));
         drag(canvas, {0.30, 0.72}, {0.44, 0.83});
@@ -191,7 +202,7 @@ void editorShots()
     shoot(editor, QStringLiteral("04-editor-copied"));
 
     editor.setShortcuts(QStringLiteral("⌘⌥⇧1"), {}, QStringLiteral("The region shortcut is already used by another application."));
-    editor.setLibraryStatus(QStringLiteral("Library (3 pending): Could not reach the library over SSH. Check that ubuntu-nuc is online."));
+    editor.setLibraryStatus(QStringLiteral("Library (3 pending): Could not reach the library over SSH. Check that library-server is online."));
     shoot(editor, QStringLiteral("05-editor-notices"));
 
     editor.resize(720, 500);
@@ -310,9 +321,8 @@ void libraryShots(int port, const QString &token)
     shoot(library, QStringLiteral("24-library-unreachable"));
 }
 
-
-// Records the frames of the README demo. Each frame's pointer position and cursor go to frames.txt,
-// so the compositing script can draw the pointer that a grab leaves out.
+// Records the frames of the README demo. A grab leaves the pointer out, so each frame's pointer
+// position and cursor go to frames.txt for drawing it in when the frames are composited.
 class Recorder {
 public:
     Recorder(const QString &directory, int first) : directory(directory), index(first), log(directory + QStringLiteral("/frames.txt"))
@@ -329,7 +339,7 @@ public:
 
     void frame(QWidget &window)
     {
-        window.grab().save(QStringLiteral("%1/%2.png").arg(directory).arg(index, 4, 10, QLatin1Char('0')));
+        save(window, QStringLiteral("%1/%2.png").arg(directory).arg(index, 4, 10, QLatin1Char('0')));
         log.write(QStringLiteral("%1 %2 %3 %4\n").arg(index).arg(pointer.x()).arg(pointer.y()).arg(QString::fromLatin1(cursor)).toUtf8());
         log.flush();
         ++index;
@@ -365,17 +375,6 @@ private:
     QFile log;
 };
 
-QWidget *namedWidget(QWidget &window, const QString &name)
-{
-    for (auto *widget : window.findChildren<QWidget *>()) {
-        if (widget->isVisible() && (widget->accessibleName() == name)) {
-            return widget;
-        }
-    }
-    qWarning("No widget named %s", qPrintable(name));
-    return nullptr;
-}
-
 QPoint centerOf(QWidget &window, QWidget *widget)
 {
     return widget ? widget->mapTo(&window, widget->rect().center()) : QPoint();
@@ -385,23 +384,29 @@ const QSize demoSize(1180, 780);
 const QSize demoCapture(2360, 1560);
 const QRect demoSelection(140, 66, 900, 586);
 
+// Opens the region overlay on a sample capture and returns its window at the given size.
+QWidget *openRegionOverlay(QSize capture, QSize window)
+{
+    RegionSelector::start({CaptureFrame{sampleCapture(capture), nullptr}}, [](QImage) {});
+    settle(300);
+    for (auto *widget : QApplication::topLevelWidgets()) {
+        if (widget->isVisible() && widget->windowTitle().contains(QStringLiteral("Select region"))) {
+            widget->resize(window);
+            settle();
+            return widget;
+        }
+    }
+    qWarning("The region overlay did not open");
+    return nullptr;
+}
+
 void regionDemo(const QString &directory)
 {
     Recorder record(directory, 100);
-    RegionSelector::start({CaptureFrame{sampleCapture(demoCapture), nullptr}}, [](QImage) {});
-    settle(300);
-    QWidget *overlay = nullptr;
-    for (auto *widget : QApplication::topLevelWidgets()) {
-        if (widget->isVisible() && widget->windowTitle().contains(QStringLiteral("Select region"))) {
-            overlay = widget;
-        }
-    }
+    QWidget *overlay = openRegionOverlay(demoCapture, demoSize);
     if (!overlay) {
-        qWarning("The region overlay did not open");
         return;
     }
-    overlay->resize(demoSize);
-    settle();
     record.pointer = QPoint(640, 470);
     record.cursor = "cross";
     QTest::mouseMove(overlay, record.pointer);
@@ -449,7 +454,10 @@ void editorDemo(const QString &directory)
                      demoSelection.size() * scale);
     editor.setCapture(sampleCapture(demoCapture).copy(crop));
     settle(100);
-    QWidget *canvas = canvasOf(editor);
+    QWidget *canvas = namedWidget(editor, QStringLiteral("Screenshot"));
+    if (!canvas) {
+        return;
+    }
     const auto at = [&](qreal x, qreal y) { return canvas->mapTo(&editor, QPoint(int(x * canvas->width()), int(y * canvas->height()))); };
     record.pointer = at(0.62, 0.86);
     record.cursor = "cross";
@@ -486,27 +494,17 @@ void editorDemo(const QString &directory)
     if (auto *button = qobject_cast<QAbstractButton *>(copy)) {
         button->click();
     }
-    // End while the confirmation is still showing; the composer holds the last frame.
+    // End while the confirmation is still showing; the last frame is held when compositing.
     record.hold(editor, 5);
 }
 
 // The overlay needs the offscreen platform, so it renders in a separate run: frameline_shots <dir> --region
 void regionShots()
 {
-    RegionSelector::start({CaptureFrame{sampleCapture(QSize(1600, 1000)), nullptr}}, [](QImage) {});
-    settle(300);
-    QWidget *overlay = nullptr;
-    for (auto *widget : QApplication::topLevelWidgets()) {
-        if (widget->isVisible() && widget->windowTitle().contains(QStringLiteral("Select region"))) {
-            overlay = widget;
-        }
-    }
+    QWidget *overlay = openRegionOverlay(QSize(1600, 1000), QSize(1600, 1000));
     if (!overlay) {
-        qWarning("The region overlay did not open");
         return;
     }
-    overlay->resize(1600, 1000);
-    settle();
     QTest::mouseMove(overlay, QPoint(620, 430));
     shoot(*overlay, QStringLiteral("30-region-idle"));
     QTest::mousePress(overlay, Qt::LeftButton, {}, QPoint(480, 260));
@@ -524,25 +522,22 @@ int main(int argc, char **argv)
     QApplication app(argc, argv);
     const QStringList arguments = app.arguments();
     if (arguments.size() < 2) {
-        qWarning("Usage: frameline_shots <output-directory> [library-port library-token]");
+        qWarning("Usage: frameline_shots <output-directory> "
+                 "[<library-port> <library-token> | --region | --demo-editor | --demo-region]");
         return 1;
     }
     outputDirectory = arguments.at(1);
     QDir().mkpath(outputDirectory);
     if (arguments.value(2) == QStringLiteral("--region")) {
         regionShots();
-        return 0;
-    }
-    if (arguments.value(2) == QStringLiteral("--demo-region")) {
+    } else if (arguments.value(2) == QStringLiteral("--demo-region")) {
         regionDemo(outputDirectory);
-        return 0;
-    }
-    if (arguments.value(2) == QStringLiteral("--demo-editor")) {
+    } else if (arguments.value(2) == QStringLiteral("--demo-editor")) {
         editorDemo(outputDirectory);
-        return 0;
+    } else {
+        editorShots();
+        settingsShots();
+        libraryShots(arguments.value(2).toInt(), arguments.value(3));
     }
-    editorShots();
-    settingsShots();
-    libraryShots(arguments.value(2).toInt(), arguments.value(3));
-    return 0;
+    return saveFailed ? 1 : 0;
 }
