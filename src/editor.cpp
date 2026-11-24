@@ -13,6 +13,7 @@
 #include <QDateTime>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QIcon>
 #include <QKeySequence>
 #include <QLabel>
 #include <QMessageBox>
@@ -330,7 +331,12 @@ protected:
     {
         const theme::Palette &c = theme::colors();
         QPainter painter(this);
-        paintIcon(painter, Icon::Region, QRectF(0, 5, 22, 22), c.text, 2);
+        const QIcon logo = QApplication::windowIcon();
+        const QRect mark(0, (height() - 22) / 2, 22, 22);
+        if (logo.isNull())
+            paintIcon(painter, Icon::Region, mark, c.text, 2);
+        else
+            logo.paint(&painter, mark);
         painter.setPen(c.text);
         painter.setFont(theme::font(14, theme::Weight::Semibold));
         painter.drawText(QRectF(31, 0, width() - 31, height()), Qt::AlignVCenter | Qt::AlignLeft, text());
@@ -340,7 +346,7 @@ private:
     static QString text() { return QStringLiteral("Frameline"); }
 };
 
-// The empty editor: what Frameline is for, framed by the viewfinder corners of its icon.
+// The empty editor uses the same viewfinder corners as region selection.
 class LauncherPage final : public QWidget {
 public:
     using QWidget::QWidget;

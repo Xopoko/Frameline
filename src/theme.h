@@ -72,7 +72,7 @@ QLabel *label(const QString &text, const char *role, QWidget *parent);
 // A soft drop shadow around a rounded rectangle.
 void paintShadow(QPainter &painter, const QRectF &rect, qreal cornerRadius, int spread, qreal offset, qreal strength);
 
-// The viewfinder corners from the app icon, drawn just inside rect.
+// Viewfinder corners drawn just inside rect.
 void paintBrackets(QPainter &painter, const QRectF &rect, qreal length, qreal width, const QColor &color);
 
 void paintFocusRing(QPainter &painter, const QRectF &rect, qreal cornerRadius);

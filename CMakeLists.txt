@@ -105,6 +105,8 @@ if(APPLE)
 endif()
 
 if(WIN32)
+    set_source_files_properties(resources/windows.rc PROPERTIES
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/Frameline.ico")
     qt_add_executable(FramelineGUI WIN32 src/main.cpp resources/resources.qrc resources/windows.rc)
     target_link_libraries(FramelineGUI PRIVATE frameline_core)
     install(TARGETS FramelineGUI RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
