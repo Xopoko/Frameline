@@ -288,6 +288,10 @@ struct LibraryClient::State : QObject {
 
     QString connectionProblem() const
     {
+#ifdef FREEZECUT_MAC_APP_STORE
+        if (transport == LibraryTransport::Ssh)
+            return QStringLiteral("SSH libraries require the direct download of FreezeCut.");
+#endif
         if (!connectionError.isEmpty())
             return connectionError;
         if (transport == LibraryTransport::Local) {

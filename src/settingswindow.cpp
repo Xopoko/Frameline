@@ -298,8 +298,14 @@ struct SettingsWindow::Ui {
         group->addWidgetRow(autostart);
         column->addWidget(group);
         column->addSpacing(7);
+#if defined(Q_OS_MACOS) && defined(FREEZECUT_MAC_APP_STORE)
+        const auto startupDescription = QStringLiteral("macOS opens FreezeCut when you sign in. "
+            "Manage approval in System Settings → General → Login Items.");
+#else
+        const auto startupDescription = QStringLiteral("FreezeCut starts in the system tray, ready to capture and run your library.");
+#endif
         column->addWidget(paragraph(startupEditable
-            ? QStringLiteral("FreezeCut starts in the system tray, ready to capture and run your library.")
+            ? startupDescription
             : error, "caption", page));
     }
 
@@ -492,11 +498,18 @@ struct SettingsWindow::Ui {
         column->setSpacing(10);
         column->addWidget(paragraph(QStringLiteral("Connect to a library server you’ve already set up."),
                                     "caption", manualDetails));
-        manualTransport = new Segmented({QStringLiteral("This computer"), QStringLiteral("Over SSH")}, manualDetails);
+        QStringList transports{QStringLiteral("This computer")};
+#ifndef FREEZECUT_MAC_APP_STORE
+        transports.append(QStringLiteral("Over SSH"));
+#endif
+        manualTransport = new Segmented(transports, manualDetails);
         manualTransport->setObjectName(QStringLiteral("libraryManualTransport"));
         manualTransport->setAccessibleName(QStringLiteral("Manual connection type"));
         manualTransport->setCurrent(saved.library.transport == LibraryTransport::Ssh ? 1 : 0);
-        column->addWidget(manualTransport);
+        if (transports.size() > 1)
+            column->addWidget(manualTransport);
+        else
+            manualTransport->hide();
         auto *fields = new Group(manualDetails);
         sshHost = new QLineEdit(saved.library.sshHost);
         sshHost->setObjectName(QStringLiteral("libraryHost"));
@@ -571,6 +584,10 @@ struct SettingsWindow::Ui {
             return Host;
         if (saved.library.transport == LibraryTransport::Tailscale)
             return Connect;
+#ifdef FREEZECUT_MAC_APP_STORE
+        if (saved.library.transport == LibraryTransport::Ssh)
+            return Off;
+#endif
         return saved.library == LibrarySettings{} ? Off : Advanced;
     }
 

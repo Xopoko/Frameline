@@ -104,6 +104,7 @@ def archive_source(directory, output):
         "On Windows x64, open an x64 Visual Studio developer shell and run\n"
         "`python scripts/build-release-qt.py source build sdk --platform windows`.\n"
         "On macOS with Xcode, run `python3 scripts/build-release-qt.py source build sdk --platform macos`.\n"
+        "For a Mac App Store build, add `--app-store` to the macOS command.\n"
         "Both builds require Python 3.12, Git, CMake, and Ninja.\n"
     )
     manifest = "".join(f"{digest}  {path.relative_to(directory).as_posix()}\n" for path, digest in inputs)

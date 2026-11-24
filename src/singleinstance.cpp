@@ -1,5 +1,9 @@
 #include "singleinstance.h"
 
+#ifdef FREEZECUT_MAC_APP_STORE
+#include "platform/macos_paths.h"
+#endif
+
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDeadlineTimer>
@@ -35,6 +39,13 @@ QString defaultRuntimeDirectory()
     // Share the runtime with releases published as Frameline.
     return QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
         .filePath(QStringLiteral("Frameline/Frameline/runtime"));
+#elif defined(FREEZECUT_MAC_APP_STORE)
+    // Keep this endpoint inside the Store container, with a short path for sockaddr_un.
+    const QString temp = macSandboxTemporaryDirectory();
+    const QString directory = QDir(temp).filePath(QStringLiteral("fc"));
+    if (!temp.isEmpty() && QFile::encodeName(directory + QStringLiteral("/s")).size() < sizeof(sockaddr_un::sun_path))
+        return directory;
+    return {};
 #else
     const QString name = QStringLiteral("frameline-%1").arg(geteuid());
     const QString runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
@@ -66,6 +77,8 @@ QString endpointName(const QString &directory)
 #ifdef Q_OS_WIN
     const QByteArray id = QCryptographicHash::hash(directory.toCaseFolded().toUtf8(), QCryptographicHash::Sha256);
     return QStringLiteral("Frameline-%1").arg(QString::fromLatin1(id.toHex().left(32)));
+#elif defined(FREEZECUT_MAC_APP_STORE)
+    return QDir(directory).filePath(QStringLiteral("s"));
 #else
     return QDir(directory).filePath(QStringLiteral("desktop.sock"));
 #endif
@@ -128,7 +141,12 @@ SingleInstance::SingleInstance(const QString &runtimeDirectory, QObject *parent)
     : QObject(parent), runtimeDirectory_(runtimeDirectory.isEmpty() ? defaultRuntimeDirectory() : runtimeDirectory),
       server_(std::make_unique<QLocalServer>())
 {
+#ifndef FREEZECUT_MAC_APP_STORE
     server_->setSocketOptions(QLocalServer::UserAccessOption);
+#else
+    // The containing directory is already mode 0700. Qt's socket option would
+    // bind an auxiliary path longer than the sandbox's Unix socket name needs.
+#endif
     connect(server_.get(), &QLocalServer::newConnection, this, [this] {
         while (QLocalSocket *socket = server_->nextPendingConnection()) {
             socket->setReadBufferSize(1);
@@ -154,7 +172,7 @@ SingleInstance::Result SingleInstance::start(Request request, QString *error)
             *error = message;
         return Result::Failed;
     };
-    if (!prepareRuntimeDirectory(runtimeDirectory_))
+    if (runtimeDirectory_.isEmpty() || !prepareRuntimeDirectory(runtimeDirectory_))
         return fail(QStringLiteral("Could not open FreezeCut’s private runtime folder."));
 
     const QString name = endpointName(runtimeDirectory_);
@@ -189,6 +207,8 @@ SingleInstance::Result SingleInstance::start(Request request, QString *error)
 bool SingleInstance::requestSettings()
 {
     const QString directory = defaultRuntimeDirectory();
+    if (directory.isEmpty())
+        return false;
     QLockFile lock(QDir(directory).filePath(QStringLiteral("desktop.lock")));
     qint64 pid = 0;
     if (!lock.getLockInfo(&pid, nullptr, nullptr) || pid == QCoreApplication::applicationPid())

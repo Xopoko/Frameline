@@ -12,6 +12,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -19,6 +20,7 @@
 #include <QPushButton>
 #include <QTextStream>
 #include <QTimer>
+#include <QUrl>
 
 #include <utility>
 
@@ -195,6 +197,26 @@ void FreezeCutApplication::start()
         trayMenu_->addAction(QStringLiteral("Open FreezeCut"), this, &FreezeCutApplication::showEditor);
         trayMenu_->addAction(QStringLiteral("Library"), this, &FreezeCutApplication::showLibrary);
         trayMenu_->addAction(QStringLiteral("Settings…"), this, &FreezeCutApplication::showSettings);
+#ifdef FREEZECUT_MAC_APP_STORE
+        trayMenu_->addAction(QStringLiteral("Privacy Policy"), this, [] {
+            QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/Xopoko/FreezeCut/blob/main/PRIVACY.md")));
+        });
+        trayMenu_->addAction(QStringLiteral("Open Source Licenses…"), this, [] {
+            QMessageBox notice(QMessageBox::Information, QStringLiteral("Open Source Licenses"),
+                QStringLiteral("FreezeCut uses Qt Base under the GNU Lesser General Public License version 3."),
+                QMessageBox::Close);
+            auto *licenses = notice.addButton(QStringLiteral("View Licenses"), QMessageBox::ActionRole);
+            auto *source = notice.addButton(QStringLiteral("Get Source Code"), QMessageBox::ActionRole);
+            notice.exec();
+            if (notice.clickedButton() == licenses) {
+                const auto directory = QDir(QCoreApplication::applicationDirPath());
+                QDesktopServices::openUrl(QUrl::fromLocalFile(directory.absoluteFilePath(
+                    QStringLiteral("../Resources/Qt-notices"))));
+            } else if (notice.clickedButton() == source) {
+                QDesktopServices::openUrl(QUrl(QStringLiteral(FREEZECUT_MAC_STORE_SOURCE_URL)));
+            }
+        });
+#endif
         trayMenu_->addSeparator();
         trayMenu_->addAction(QStringLiteral("Quit FreezeCut"), this, &FreezeCutApplication::quitDesktop);
         tray_.setContextMenu(trayMenu_.get());

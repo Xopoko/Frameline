@@ -24,6 +24,7 @@ bool fail(QString *error, const QString &message)
     return false;
 }
 
+#if !defined(Q_OS_MACOS) || !defined(FREEZECUT_MAC_APP_STORE)
 QString executablePath()
 {
     const QFileInfo current(QCoreApplication::applicationFilePath());
@@ -65,6 +66,7 @@ QByteArray entryContents(const QString &executable)
     return Detail::linuxEntry(executable);
 #endif
 }
+#endif
 #endif
 
 } // namespace
@@ -232,6 +234,12 @@ bool Detail::restoreFile(const QString &path, const State &state, QString *error
     return true;
 }
 
+bool isEnabled(QString *error)
+{
+    return snapshot(error).isEnabled();
+}
+
+#if !defined(Q_OS_MACOS) || !defined(FREEZECUT_MAC_APP_STORE)
 State snapshot(QString *error)
 {
     if (error)
@@ -252,11 +260,6 @@ State snapshot(QString *error)
     }
     return Detail::fileSnapshot(path, error);
 #endif
-}
-
-bool isEnabled(QString *error)
-{
-    return snapshot(error).isEnabled();
 }
 
 bool restore(const State &state, QString *error)
@@ -352,5 +355,6 @@ void refreshAtStartup()
     Detail::restoreFile(legacyPath, {});
 #endif
 }
+#endif
 
 } // namespace Autostart

@@ -80,7 +80,7 @@ private slots:
     void settingsDialog();
     void standaloneLibrary();
     void libraryRejectsStaleSettings();
-#if !defined(Q_OS_WIN)
+#if !defined(Q_OS_WIN) && !defined(FREEZECUT_MAC_APP_STORE)
     void settingsMoveFromScreenFrame();
 #endif
 #if defined(Q_OS_WIN)
@@ -374,12 +374,20 @@ void FreezeCutTests::settingsDialog()
     QVERIFY2(!host->isVisible() && token->isVisible() && token->echoMode() == QLineEdit::Password,
              "Loopback settings must hide the SSH host and mask the access token.");
     transport->setCurrent(1);
+#ifdef FREEZECUT_MAC_APP_STORE
+    QVERIFY2(!transport->isVisible() && !host->isVisible(), "The Store build must hide SSH setup.");
+#else
     QVERIFY2(host->isVisible(), "SSH setup must expose the host field.");
+#endif
     save->click();
     QVERIFY2(window.isVisible() && window.result() != QDialog::Accepted,
              "An incomplete connection must not close settings on Save.");
 
-    const LibrarySettings fixture = validLibrary();
+    LibrarySettings fixture = validLibrary();
+#ifdef FREEZECUT_MAC_APP_STORE
+    fixture.transport = LibraryTransport::Local;
+    fixture.sshHost.clear();
+#endif
     host->setText(fixture.sshHost);
     device->setText(fixture.device);
     token->setText(fixture.token);
@@ -396,7 +404,7 @@ void FreezeCutTests::settingsDialog()
     });
     save->click();
     QVERIFY2(window.result() == QDialog::Accepted && window.settings().library.storageKey() == fixture.storageKey(),
-             "Valid SSH settings should save with the selected connection.");
+             "Valid library settings should save with the selected connection.");
 }
 
 void FreezeCutTests::standaloneLibrary()
@@ -471,7 +479,7 @@ void FreezeCutTests::libraryRejectsStaleSettings()
              "An older Library instance must not queue a new capture after the destination changes.");
 }
 
-#if !defined(Q_OS_WIN)
+#if !defined(Q_OS_WIN) && !defined(FREEZECUT_MAC_APP_STORE)
 void FreezeCutTests::settingsMoveFromScreenFrame()
 {
     const QTemporaryDir home;

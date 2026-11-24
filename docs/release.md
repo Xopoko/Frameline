@@ -24,6 +24,33 @@ Publish the corresponding Qt source bundle alongside the Windows and macOS packa
 
 For a public macOS download, use a Developer ID signature and Apple's notarization service, then verify the downloaded package on a clean Mac. The artifact workflow stages ad hoc builds for testing. [Apple notarization guide](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
 
+## Mac App Store
+
+Use an Xcode-equipped Mac with CMake, Ninja and Python 3.12 or later. Prepare the pinned Qt inputs and build the shared SDK with App Store support. The default macOS SDK build includes Apple Silicon and Intel.
+
+```sh
+python3 scripts/release-qt.py source release-qt
+python3 scripts/build-release-qt.py release-qt/source release-qt/build release-qt/sdk --platform macos --app-store
+python3 scripts/release-qt.py notices release-qt/source release-qt/sdk release-qt/notices
+cmake -S . -B build-store -DCMAKE_BUILD_TYPE=Release \
+  '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64' \
+  -DCMAKE_PREFIX_PATH="$PWD/release-qt/sdk" \
+  -DFREEZECUT_QT_NOTICES_DIR="$PWD/release-qt/notices" \
+  -DFREEZECUT_MAC_APP_STORE=ON -DFREEZECUT_MAC_BUILD_NUMBER=1
+cmake --build build-store --parallel
+ctest --test-dir build-store --output-on-failure
+```
+
+Use `bash scripts/package-mac-app-store.sh sandbox-test build-store /path/to/new-test-directory` to produce a locally signed app with a separate test container. To build with a modified Qt, edit the prepared Qt source, choose new `build` and `sdk` paths, then repeat the shared SDK and app builds. Prepare notices again from the modified source. The local test app runs independently of App Store receipts or distribution credentials. Grant it Screen Recording permission before testing capture.
+
+Sign a distribution package with the existing Apple Distribution and Mac Installer Distribution identities and a Mac App Store provisioning profile for `io.github.xopoko.Frameline`. Run `scripts/package-mac-app-store.sh` without arguments to see the supported commands. Test native region capture, PNG saving, clipboard copy, Library persistence and login behavior before sending the candidate to review.
+
+The Store build keeps its Library in its App Sandbox container. To carry over a history from a direct download, quit both apps and copy captures from `~/.frameline/history` to the Store build's `history` folder in its container. The [privacy policy](../PRIVACY.md) lists the container path.
+
+The Mac App Store build supports local and Tailscale library connections. Use the direct download for SSH libraries, which need access to your existing SSH configuration and keys.
+
+Publish the exact application source and the matching Qt source archive under `v<version>-mac-app-store.<build>` on GitHub. The menu bar's **Open Source Licenses** links to that release and opens the bundled license notices. Use `python3 scripts/release-qt.py archive release-qt dist` to generate the corresponding Qt archive.
+
 ## Ubuntu dependencies
 
 The DEB uses the Qt libraries from Ubuntu 24.04. Install Ubuntu's security updates to receive fixes for these libraries. Canonical tracks the status of [CVE-2026-105924](https://ubuntu.com/security/CVE-2026-105924) and [CVE-2026-116337](https://ubuntu.com/security/CVE-2026-116337) for its `qt6-base` package.

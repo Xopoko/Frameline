@@ -13,10 +13,11 @@ def main():
     parser.add_argument("build", type=Path)
     parser.add_argument("sdk", type=Path)
     parser.add_argument("--platform", required=True, choices=("windows", "macos"))
-    parser.add_argument("--arch", choices=("x86_64",), help="Build only the Intel slice on macOS")
+    parser.add_argument("--arch", choices=("arm64", "x86_64"), help="Build only one slice on macOS")
+    parser.add_argument("--app-store", action="store_true", help="Enable Qt's Mac App Store configuration")
     args = parser.parse_args()
-    if args.platform == "windows" and args.arch:
-        parser.error("--arch only applies to macOS")
+    if args.platform == "windows" and (args.arch or args.app_store):
+        parser.error("--arch and --app-store only apply to macOS")
 
     source, build, sdk = (path.resolve() for path in (args.source, args.build, args.sdk))
     build.mkdir(parents=True, exist_ok=False)
@@ -28,6 +29,8 @@ def main():
     ]
     if args.platform == "macos":
         configure = source / "configure"
+        if args.app_store:
+            options.append("-feature-appstore-compliant")
         options.extend(["-no-feature-securetransport", "--", "-DCMAKE_OSX_DEPLOYMENT_TARGET=14.4",
                         f"-DCMAKE_OSX_ARCHITECTURES={args.arch or 'x86_64;arm64'}"])
     else:

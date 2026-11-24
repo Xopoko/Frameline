@@ -9,9 +9,10 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 
-bool savePng(const QImage &image, const QString &path, QString *error)
+namespace {
+
+bool writePng(const QImage &image, QSaveFile &file, QString *error)
 {
-    QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly)) {
         *error = file.errorString();
         return false;
@@ -34,6 +35,14 @@ bool savePng(const QImage &image, const QString &path, QString *error)
     return true;
 }
 
+} // namespace
+
+bool savePng(const QImage &image, const QString &path, QString *error)
+{
+    QSaveFile file(path);
+    return writePng(image, file, error);
+}
+
 bool saveImageAs(QWidget *parent, const QImage &image, const QDateTime &capturedAt)
 {
     QString directory = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
@@ -49,7 +58,12 @@ bool saveImageAs(QWidget *parent, const QImage &image, const QDateTime &captured
         return false;
     }
     QString error;
-    if (!savePng(image, dialog.selectedFiles().constFirst(), &error)) {
+    QSaveFile file(dialog.selectedFiles().constFirst());
+#ifdef FREEZECUT_MAC_APP_STORE
+    // The save panel may grant access to only the selected file, not a temporary sibling.
+    file.setDirectWriteFallback(true);
+#endif
+    if (!writePng(image, file, &error)) {
         QMessageBox::warning(parent, QStringLiteral("Could not save screenshot"), error);
         return false;
     }

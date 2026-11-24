@@ -3,6 +3,12 @@
 #include "libraryprotocol.h"
 #include "tailscale.h"
 
+#ifdef FREEZECUT_MAC_APP_STORE
+#include "platform/macos_paths.h"
+
+#include <QStandardPaths>
+#endif
+
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -184,13 +190,20 @@ QString HostedLibrarySettings::validationError() const
     return {};
 }
 
+#ifndef FREEZECUT_MAC_APP_STORE
 static QString legacySettingsDirectory()
 {
     return QDir::home().filePath(QStringLiteral(".screenframe"));
 }
+#endif
 
 QString defaultSettingsDirectory()
 {
+#ifdef FREEZECUT_MAC_APP_STORE
+    // A separate profile in the sandbox lets the Store and standalone versions coexist.
+    const QDir appSupport(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation));
+    return appSupport.filePath(QStringLiteral("FreezeCut/.frameline"));
+#else
     // Move the ScreenFrame folder into the existing profile with settings, queued uploads and a
     // library kept there. If the move fails, for example while an older process holds a file open,
     // keep using the old folder.
@@ -201,6 +214,7 @@ QString defaultSettingsDirectory()
         return legacy;
     }
     return current;
+#endif
 }
 
 QString defaultHostedLibraryDirectory(const QString &settingsDirectory)
@@ -275,6 +289,26 @@ std::optional<LibrarySettings> librarySettingsFromConnectionCode(const QString &
     return settings;
 }
 
+#ifdef FREEZECUT_MAC_APP_STORE
+static QString copiedDefaultLibraryDirectory(const QString &path, const QString &settingsDirectory)
+{
+    if (path.isEmpty() || QDir::cleanPath(settingsDirectory) != defaultSettingsDirectory())
+        return path;
+
+    const QString accountHome = macAccountHomeDirectory();
+    const QString copy = defaultHostedLibraryDirectory(settingsDirectory);
+    if (accountHome.isEmpty() || !QFileInfo(copy).isDir())
+        return path;
+
+    const QDir home(accountHome);
+    const QString clean = QDir::cleanPath(path);
+    if (clean == home.filePath(QStringLiteral(".frameline/library"))
+        || clean == home.filePath(QStringLiteral(".screenframe/library"))) {
+        return copy;
+    }
+    return path;
+}
+#else
 // A library folder inside the old ScreenFrame settings folder moved with it to the Frameline profile.
 static QString movedFromLegacyDirectory(const QString &path)
 {
@@ -288,6 +322,7 @@ static QString movedFromLegacyDirectory(const QString &path)
         return path;
     return QDir::toNativeSeparators(current + clean.mid(legacy.size()));
 }
+#endif
 
 AppSettings loadSettings(const QString &directory, QString *error)
 {
@@ -317,7 +352,11 @@ AppSettings loadSettings(const QString &directory, QString *error)
     AppSettings settings{library, object->value(QStringLiteral("useSystemRegionShortcut")).toBool(), hosted,
                          object->value(QStringLiteral("autoCopyScreenshot")).toBool(true),
                          object->value(QStringLiteral("showEditorAfterCapture")).toBool(true)};
+#ifdef FREEZECUT_MAC_APP_STORE
+    settings.hostedLibrary.directory = copiedDefaultLibraryDirectory(settings.hostedLibrary.directory, directory);
+#else
     settings.hostedLibrary.directory = movedFromLegacyDirectory(settings.hostedLibrary.directory);
+#endif
     readError = hostedConnectionError(settings);
     report(error, readError);
     return readError.isEmpty() ? settings : AppSettings{};
