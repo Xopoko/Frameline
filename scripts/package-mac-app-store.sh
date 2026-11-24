@@ -95,7 +95,8 @@ if [[ $# == 7 ]]; then
 fi
 
 profile="$contents/embedded.provisionprofile"
-cp -- "$6" "$profile"
+cp -X -- "$6" "$profile"
+chmod 0644 "$profile"
 profile_plist="$work/profile.plist"
 security cms -D -i "$profile" -o "$profile_plist"
 if "$plist_buddy" -c 'Print :ProvisionedDevices' "$profile_plist" >/dev/null 2>&1 \
