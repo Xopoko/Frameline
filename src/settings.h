@@ -40,6 +40,7 @@ struct AppSettings {
     bool useSystemRegionShortcut = false;
     HostedLibrarySettings hostedLibrary;
     bool autoCopyScreenshot = true;
+    bool showEditorAfterCapture = true;
 
     bool operator==(const AppSettings &) const = default;
 };

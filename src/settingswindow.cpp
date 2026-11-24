@@ -248,6 +248,7 @@ struct SettingsWindow::Ui {
     QScrollArea *scroll = nullptr;
     QWidget *page = nullptr;
     Toggle *autostart = nullptr;
+    Toggle *showEditorAfterCapture = nullptr;
     Toggle *autoCopyScreenshot = nullptr;
     Toggle *takeover = nullptr;
     Keycap *regionCap = nullptr;
@@ -307,6 +308,10 @@ struct SettingsWindow::Ui {
         column->addWidget(theme::label(QStringLiteral("Capture"), "heading", page));
         column->addSpacing(12);
         auto *group = new Group(page);
+        showEditorAfterCapture = new Toggle(QStringLiteral("Show editor after capture"));
+        showEditorAfterCapture->setObjectName(QStringLiteral("showEditorAfterCapture"));
+        showEditorAfterCapture->setChecked(saved.showEditorAfterCapture);
+        group->addWidgetRow(showEditorAfterCapture);
         autoCopyScreenshot = new Toggle(QStringLiteral("Copy screenshots to clipboard"));
         autoCopyScreenshot->setObjectName(QStringLiteral("autoCopyScreenshot"));
         autoCopyScreenshot->setChecked(saved.autoCopyScreenshot);
@@ -582,6 +587,7 @@ struct SettingsWindow::Ui {
         if (error)
             error->clear();
         AppSettings result;
+        result.showEditorAfterCapture = showEditorAfterCapture->isChecked();
         result.autoCopyScreenshot = autoCopyScreenshot->isChecked();
         result.useSystemRegionShortcut = takeover->isChecked();
         result.hostedLibrary = saved.hostedLibrary;
@@ -663,6 +669,7 @@ struct SettingsWindow::Ui {
         autostart->setEnabled(!busy && startupEditable);
         for (QWidget *control : {libraryDetails, hostDetails, joinDetails, tailscaleDetails, manualDetails,
                                  static_cast<QWidget *>(test), static_cast<QWidget *>(save),
+                                 static_cast<QWidget *>(showEditorAfterCapture),
                                  static_cast<QWidget *>(autoCopyScreenshot),
                                  static_cast<QWidget *>(takeover)}) {
             control->setEnabled(!busy);

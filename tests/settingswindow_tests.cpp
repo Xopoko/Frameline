@@ -4,6 +4,7 @@
 #include "tailscale.h"
 
 #include <QClipboard>
+#include <QFile>
 #include <QGuiApplication>
 #include <QLineEdit>
 #include <QTemporaryDir>
@@ -26,33 +27,50 @@ class SettingsWindowTests : public QObject {
     Q_OBJECT
 
 private slots:
-    void disableAutomaticScreenshotCopy();
+    void captureOptionsPersist();
     void hostAndShare();
     void verifyNewConnectionBeforeSaving();
 };
 
-void SettingsWindowTests::disableAutomaticScreenshotCopy()
+void SettingsWindowTests::captureOptionsPersist()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    SettingsWindow window(loadSettings(directory.path()));
+    const AppSettings defaults = loadSettings(directory.path());
+    QVERIFY(defaults.showEditorAfterCapture && defaults.autoCopyScreenshot);
+
+    QFile legacy(directory.filePath(QStringLiteral("settings.json")));
+    QVERIFY(legacy.open(QIODevice::WriteOnly));
+    const QByteArray legacySettings = R"({"schemaVersion":1,"library":{"transport":"local"},"autoCopyScreenshot":false})";
+    QCOMPARE(legacy.write(legacySettings), legacySettings.size());
+    legacy.close();
+
+    QString loadError;
+    const auto loaded = loadSettings(directory.path(), &loadError);
+    QVERIFY2(loadError.isEmpty(), qPrintable(loadError));
+    SettingsWindow window(loaded);
+    auto *preview = window.findChild<Toggle *>(QStringLiteral("showEditorAfterCapture"));
     auto *copy = window.findChild<Toggle *>(QStringLiteral("autoCopyScreenshot"));
     auto *save = buttonWithText(window, QStringLiteral("Save"));
-    QVERIFY(copy && save);
-    QVERIFY(copy->isChecked());
+    QVERIFY(preview && copy && save);
+    QVERIFY(preview->isChecked());
+    QVERIFY(!copy->isChecked());
 
     connect(&window, &SettingsWindow::saveRequested, this, [&](const AppSettings &settings, bool) {
         QString error;
         QVERIFY2(saveSettings(settings, directory.path(), &error), qPrintable(error));
         window.setSaveResult({}, settings);
     });
+    preview->click();
     copy->click();
     save->click();
     QCOMPARE(window.result(), int(QDialog::Accepted));
 
     SettingsWindow reopened(loadSettings(directory.path()));
+    preview = reopened.findChild<Toggle *>(QStringLiteral("showEditorAfterCapture"));
     copy = reopened.findChild<Toggle *>(QStringLiteral("autoCopyScreenshot"));
-    QVERIFY(copy && !copy->isChecked());
+    QVERIFY(preview && !preview->isChecked());
+    QVERIFY(copy && copy->isChecked());
 }
 
 void SettingsWindowTests::hostAndShare()

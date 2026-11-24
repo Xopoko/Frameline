@@ -74,7 +74,7 @@ Turn on **Start Frameline when I sign in** in **Settings** and save to start Fra
 
 For a region, drag over the frozen screen and release. `Esc` or a right click cancels.
 
-Frameline copies new screenshots to the clipboard by default. Turn off **Copy screenshots to clipboard** under **Settings → Capture** to disable this.
+Frameline opens new screenshots in the editor and copies them to the clipboard by default. In **Settings → Capture**, you can turn off **Show editor after capture** or **Copy screenshots to clipboard** independently.
 
 | In the editor | Keys |
 | --- | --- |

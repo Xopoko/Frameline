@@ -37,6 +37,14 @@ constexpr int compositorDelayMs = 180;
 void bringToFront(QWidget &window)
 {
     window.showNormal();
+#ifdef Q_OS_WIN
+    // A hidden launch can override the first native ShowWindow call in the process.
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        const auto handle = reinterpret_cast<HWND>(window.winId());
+        if (!IsWindowVisible(handle))
+            ShowWindow(handle, SW_SHOWNORMAL);
+    }
+#endif
     window.raise();
     window.activateWindow();
 }
@@ -128,7 +136,9 @@ FramelineApplication::FramelineApplication(LaunchOptions options)
             finishCapture(frames.isEmpty() ? QImage{} : frames.first().image);
             return;
         }
-        RegionSelector::start(frames, [this](QImage image) { finishCapture(std::move(image)); });
+        RegionSelector::start(frames, [this](QImage image, const std::function<void()> &dismiss) {
+            finishCapture(std::move(image), dismiss);
+        });
     });
 }
 
@@ -522,7 +532,7 @@ void FramelineApplication::captureAfterHiding(bool surfaceWasVisible)
 #endif
 }
 
-void FramelineApplication::finishCapture(QImage image)
+void FramelineApplication::finishCapture(QImage image, const std::function<void()> &dismissSelection)
 {
     busy_ = false;
     portalAuthorizing_ = false;
@@ -539,9 +549,26 @@ void FramelineApplication::finishCapture(QImage image)
         return;
     }
 
+    const bool showPreview = options_.preview && settings_.showEditorAfterCapture;
+    if (!showPreview && dismissSelection)
+        dismissSelection();
+
     const QString kind = region_ ? QStringLiteral("region") : QStringLiteral("full");
     const QDateTime capturedAt = QDateTime::currentDateTimeUtc();
     const QString historyId = history_->enqueue(image, kind, capturedAt);
+    archivePreview();
+    if (showPreview) {
+        restoreEditor_ = false;
+        restoreLibrary_ = false;
+        image.setDevicePixelRatio(1);
+        editor().setCapture(image);
+        previewCapture_ = {kind, capturedAt, historyId};
+        previewOpened_ = true;
+        // The selection still owns the foreground when the editor is first shown.
+        showEditor();
+        if (dismissSelection)
+            dismissSelection();
+    }
     if (settings_.autoCopyScreenshot)
         copyScreenshotToClipboard(image);
 
@@ -556,20 +583,22 @@ void FramelineApplication::finishCapture(QImage image)
         options_.output.clear();
     }
 
-    if (!options_.preview) {
+    if (!showPreview) {
         libraryClient_->enqueue(std::move(image), kind, capturedAt, historyId);
-        exitAfterLibrarySync();
+        if (isDesktop()) {
+            if (editor_)
+                editor_->setCapture({});
+            if (tray_.isVisible())
+                restoreEditor_ = false;
+            restoreWindows();
+            if (shouldQuit)
+                quitDesktop();
+        } else {
+            exitAfterLibrarySync();
+        }
         return;
     }
 
-    restoreEditor_ = false;
-    restoreLibrary_ = false;
-    archivePreview();
-    image.setDevicePixelRatio(1);
-    editor().setCapture(image);
-    previewCapture_ = {kind, capturedAt, historyId};
-    showEditor();
-    previewOpened_ = true;
     if (!outputError.isEmpty()) {
         QMessageBox dialog(QMessageBox::Warning, QStringLiteral("Could not save screenshot"), outputError,
                            QMessageBox::Ok, editor_.get());
@@ -588,7 +617,7 @@ void FramelineApplication::failCapture(const QString &message)
     const bool shouldQuit = std::exchange(exitAfterCapture_, false);
     if (!isDesktop() && !previewOpened_) {
         QTextStream(stderr) << message << Qt::endl;
-        if (options_.preview) {
+        if (options_.preview && settings_.showEditorAfterCapture) {
             QMessageBox::warning(nullptr, QStringLiteral("Frameline"), message);
         }
         exitCode_ = 1;

@@ -408,7 +408,7 @@ const QRect demoSelection(140, 66, 900, 586);
 // Opens the region overlay on a sample capture and returns its window at the given size.
 QWidget *openRegionOverlay(QSize capture, QSize window)
 {
-    RegionSelector::start({CaptureFrame{sampleCapture(capture), nullptr}}, [](QImage) {});
+    RegionSelector::start({CaptureFrame{sampleCapture(capture), nullptr}}, [](QImage, const auto &) {});
     settle(300);
     for (auto *widget : QApplication::topLevelWidgets()) {
         if (widget->isVisible() && widget->windowTitle().contains(QStringLiteral("Select region"))) {

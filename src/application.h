@@ -9,6 +9,7 @@
 #include <QMenu>
 #include <QSystemTrayIcon>
 
+#include <functional>
 #include <memory>
 
 class LibraryClient;
@@ -45,7 +46,7 @@ private:
     void quitDesktop();
     void beginCapture(bool region, bool fromTrayMenu = false);
     void captureAfterHiding(bool surfaceWasVisible);
-    void finishCapture(QImage image);
+    void finishCapture(QImage image, const std::function<void()> &dismissSelection = {});
     void failCapture(const QString &message);
     void requestPortalPermission(const QString &message);
     void restoreWindows();

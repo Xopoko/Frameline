@@ -3,6 +3,7 @@
 #include "libraryclient.h"
 #include "librarywindow.h"
 #include "pngexport.h"
+#include "regionselector.h"
 #include "settings.h"
 #include "settingswindow.h"
 
@@ -14,12 +15,16 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QMouseEvent>
+#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimeZone>
+
+#include <memory>
 
 #if defined(Q_OS_WIN)
 #include "platform/windows_shortcuts.h"
@@ -68,6 +73,7 @@ private slots:
     void annotationRendering();
     void annotationDamage();
     void pngExport();
+    void regionSelectionHandsOffBeforeDismiss();
     void settingsValidation();
     void settingsDestinationKey();
     void settingsRoundTrip();
@@ -157,6 +163,59 @@ void FramelineTests::pngExport()
     const QImage expected = premultiplied.convertToFormat(QImage::Format_ARGB32);
     QVERIFY2(savePng(premultiplied, path, &error) && QImage(path) == expected,
              "Exporting a premultiplied image must preserve straight-alpha pixels.");
+}
+
+void FramelineTests::regionSelectionHandsOffBeforeDismiss()
+{
+    const bool quitOnClose = QApplication::quitOnLastWindowClosed();
+    QApplication::setQuitOnLastWindowClosed(false);
+    const auto restore = qScopeGuard([quitOnClose] { QApplication::setQuitOnLastWindowClosed(quitOnClose); });
+
+    struct Selection {
+        QPointer<QWidget> overlay;
+        QImage image;
+        bool completed = false;
+        bool visibleDuringHandoff = false;
+        bool hiddenAfterDismiss = false;
+    };
+    const auto selection = std::make_shared<Selection>();
+    QImage frame(160, 100, QImage::Format_RGB32);
+    frame.fill(Qt::blue);
+    RegionSelector::start({CaptureFrame{frame, nullptr}}, [selection](QImage image, const auto &dismiss) {
+        selection->visibleDuringHandoff = selection->overlay && selection->overlay->isVisible();
+        dismiss();
+        selection->hiddenAfterDismiss = !selection->overlay || !selection->overlay->isVisible();
+        selection->image = std::move(image);
+        selection->completed = true;
+    });
+    for (auto *window : QApplication::topLevelWidgets()) {
+        if (window->isVisible() && window->windowTitle() == QStringLiteral("Frameline — Select region")) {
+            selection->overlay = window;
+            break;
+        }
+    }
+    const auto &overlay = selection->overlay;
+    QVERIFY(overlay);
+    const auto close = qScopeGuard([&overlay] {
+        if (overlay && overlay->isVisible())
+            overlay->close();
+    });
+    overlay->resize(800, 500);
+    const QPoint center = overlay->rect().center();
+    const QPoint start = center - QPoint(36, 24);
+    const QPoint end = center + QPoint(36, 24);
+    QMouseEvent press(QEvent::MouseButtonPress, start, overlay->mapToGlobal(start),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, end, overlay->mapToGlobal(end),
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(overlay, &press);
+    QCoreApplication::sendEvent(overlay, &release);
+
+    QTRY_VERIFY_WITH_TIMEOUT(selection->completed, 1000);
+    QVERIFY(selection->visibleDuringHandoff);
+    QVERIFY(selection->hiddenAfterDismiss);
+    QVERIFY(!selection->image.isNull());
+    QCOMPARE(selection->image.pixelColor(0, 0), QColor(Qt::blue));
 }
 
 void FramelineTests::settingsValidation()
@@ -493,6 +552,7 @@ void FramelineTests::captureCopiesImageToClipboard()
         if (!enabled) {
             AppSettings settings;
             settings.autoCopyScreenshot = false;
+            settings.showEditorAfterCapture = false;
             QString error;
             QVERIFY2(saveSettings(settings, defaultSettingsDirectory(), &error), qPrintable(error));
         }
@@ -504,6 +564,14 @@ void FramelineTests::captureCopiesImageToClipboard()
         FramelineApplication application({LaunchOptions::Mode::Full, path});
         application.start();
         QTRY_VERIFY(QFileInfo::exists(path));
+        bool editorVisible = false;
+        for (const auto *window : QApplication::topLevelWidgets()) {
+            if (qobject_cast<const EditorWindow *>(window) && window->isVisible()) {
+                editorVisible = true;
+                break;
+            }
+        }
+        QCOMPARE(editorVisible, enabled);
         const QImage captured(path);
         QVERIFY(!captured.isNull());
         if (enabled)

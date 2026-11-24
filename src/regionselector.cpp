@@ -110,7 +110,7 @@ class Overlay;
 class Session final : public QObject
 {
 public:
-    explicit Session(std::function<void(QImage)> done)
+    explicit Session(RegionSelector::Completion done)
         : QObject(QCoreApplication::instance()), done_(std::move(done)) {}
 
     void show(const QList<CaptureFrame> &frames);
@@ -137,8 +137,9 @@ private:
     QImage cropImage() const;
     QPointF cursorPoint(const Overlay *overlay, const QMouseEvent &event) const;
     void refreshOverlays();
+    void dismissOverlays();
 
-    std::function<void(QImage)> done_;
+    RegionSelector::Completion done_;
     QList<Overlay *> overlays_;
     QRectF desktop_;
     bool nativeCoordinates_ = false;
@@ -619,18 +620,25 @@ void Session::finish(QImage image)
         return;
 
     finished_ = true;
-    for (auto *overlay : overlays_) {
+    dragging_ = false;
+    if (image.isNull())
+        dismissOverlays();
+
+    // Finish handling the mouse release before handing focus to the editor.
+    QTimer::singleShot(0, this, [this, image = std::move(image)]() mutable {
+        auto done = std::move(done_);
+        done(std::move(image), [this] { dismissOverlays(); });
+        dismissOverlays();
+        deleteLater();
+    });
+}
+
+void Session::dismissOverlays()
+{
+    for (auto *overlay : std::exchange(overlays_, {})) {
         overlay->hide();
         overlay->deleteLater();
     }
-    overlays_.clear();
-
-    // The completion callback can open the editor or quit the application.
-    QTimer::singleShot(0, this, [this, image = std::move(image)]() mutable {
-        auto done = std::move(done_);
-        deleteLater();
-        done(std::move(image));
-    });
 }
 
 QPointF Session::cursorPoint(const Overlay *overlay, const QMouseEvent &event) const
@@ -743,7 +751,7 @@ QImage Session::cropImage() const
 
 } // namespace
 
-void RegionSelector::start(const QList<CaptureFrame> &frames, std::function<void(QImage)> done)
+void RegionSelector::start(const QList<CaptureFrame> &frames, Completion done)
 {
     if (done)
         (new Session(std::move(done)))->show(frames);
