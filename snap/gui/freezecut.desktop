@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=FreezeCut
+Comment=Take and annotate screenshots
+Exec=freezecut
+Icon=${SNAP}/meta/gui/icon.png
+Terminal=false
+Categories=Graphics;
+StartupNotify=true
+Actions=Full;Region;
+
+[Desktop Action Full]
+Name=Capture screen
+Exec=freezecut capture full
+
+[Desktop Action Region]
+Name=Capture region
+Exec=freezecut capture region

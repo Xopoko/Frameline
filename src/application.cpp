@@ -198,7 +198,7 @@ void FreezeCutApplication::start()
         trayMenu_->addAction(QStringLiteral("Open FreezeCut"), this, &FreezeCutApplication::showEditor);
         trayMenu_->addAction(QStringLiteral("Library"), this, &FreezeCutApplication::showLibrary);
         trayMenu_->addAction(QStringLiteral("Settings…"), this, &FreezeCutApplication::showSettings);
-#if defined(FREEZECUT_MAC_APP_STORE) || defined(FREEZECUT_WINDOWS_STORE)
+#if defined(FREEZECUT_MAC_APP_STORE) || defined(FREEZECUT_WINDOWS_STORE) || defined(FREEZECUT_LINUX_SNAP)
         trayMenu_->addAction(QStringLiteral("Privacy Policy"), this, [] {
             QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/Xopoko/FreezeCut/blob/main/PRIVACY.md")));
         });
@@ -207,9 +207,13 @@ void FreezeCutApplication::start()
                 QStringLiteral("FreezeCut uses Qt Base under the GNU Lesser General Public License version 3."),
                 QMessageBox::Close);
             const auto directory = QDir(QCoreApplication::applicationDirPath());
-#ifdef FREEZECUT_WINDOWS_STORE
+#if defined(FREEZECUT_WINDOWS_STORE) || defined(FREEZECUT_LINUX_SNAP)
+#ifdef FREEZECUT_LINUX_SNAP
+            const QDir notices(directory.absoluteFilePath(QStringLiteral("../share/doc/freezecut/Qt-notices")));
+#else
             // The package can read its bundled notices even when Explorer cannot open WindowsApps.
             const QDir notices(directory.absoluteFilePath(QStringLiteral("../Qt-notices")));
+#endif
             QStringList licenseText;
             for (const auto *fileName : {"README.txt", "THIRD-PARTY.txt", "upstream/LICENSES/LGPL-3.0-only.txt",
                                         "upstream/LICENSES/GPL-3.0-only.txt"}) {

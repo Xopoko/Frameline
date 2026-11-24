@@ -6,6 +6,11 @@
 #include <QTest>
 #include <QXmlStreamReader>
 
+#ifdef FREEZECUT_LINUX_SNAP
+#include "settings.h"
+#include <QScopeGuard>
+#endif
+
 #ifdef FREEZECUT_WINDOWS_STORE
 #include <qt_windows.h>
 #include <appmodel.h>
@@ -17,6 +22,36 @@ class AutostartTests final : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef FREEZECUT_LINUX_SNAP
+    void snapUsesCommonHistoryAndRevisionStartupFile()
+    {
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        const char commonVariable[] = "SNAP_USER_COMMON";
+        const char dataVariable[] = "SNAP_USER_DATA";
+        const auto restoreEnvironment = qScopeGuard([common = qgetenv(commonVariable), data = qgetenv(dataVariable)] {
+            common.isNull() ? qunsetenv("SNAP_USER_COMMON") : qputenv("SNAP_USER_COMMON", common);
+            data.isNull() ? qunsetenv("SNAP_USER_DATA") : qputenv("SNAP_USER_DATA", data);
+        });
+        qputenv(commonVariable, QFile::encodeName(temporary.filePath(u"common"_s)));
+        qputenv(dataVariable, QFile::encodeName(temporary.filePath(u"1"_s)));
+
+        const auto profile = temporary.filePath(u"common/.frameline"_s);
+        QCOMPARE(defaultSettingsDirectory(), profile);
+        QVERIFY(!Autostart::isEnabled());
+        QString error;
+        QVERIFY2(Autostart::setEnabled(true, &error), qPrintable(error));
+        QVERIFY(Autostart::isEnabled());
+        const auto startupFile = temporary.filePath(u"1/.config/autostart/io.github.xopoko.Frameline.desktop"_s);
+        QVERIFY(Autostart::Detail::fileSnapshot(startupFile).entry.toByteArray().contains(" --tray\n"));
+
+        qputenv(dataVariable, QFile::encodeName(temporary.filePath(u"2"_s)));
+        QCOMPARE(defaultSettingsDirectory(), profile);
+        QVERIFY(!Autostart::isEnabled());
+        QVERIFY(QFile::exists(startupFile));
+    }
+#endif
+
 #ifdef FREEZECUT_WINDOWS_STORE
     void storeBuildNeedsPackageIdentityToRegister()
     {

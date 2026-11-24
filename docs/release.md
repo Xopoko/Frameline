@@ -7,6 +7,7 @@ Build and test the release candidate from a clean checkout. The repository's **B
 | ZIP | Windows 10 (1809 or later) and Windows 11, x64 | Extract before running `bin/FreezeCutGUI.exe`. The preview is unsigned. |
 | DMG | macOS 14.4+, Apple Silicon and Intel | The preview is ad hoc signed. Validate a quarantined download before public distribution. |
 | DEB | Ubuntu 24.04, amd64 | Uses system Qt packages. Capture works in X11 or through a compatible Wayland portal. |
+| Snap | Ubuntu 24.04, amd64 | Strictly confined package with its own Qt and a profile shared across snap revisions. |
 
 Use a fresh profile and sample screenshots for these checks:
 
@@ -23,6 +24,26 @@ The release workflow builds shared Qt Base 6.12.0 from the official source with 
 Publish the corresponding Qt source bundle alongside the Windows and macOS packages. It contains the upstream archive, the applied patches, their checksums, and the build recipe. Keep the included license texts, attribution, and library replacement instructions. [Qt redistribution obligations](https://www.qt.io/development/open-source-lgpl-obligations)
 
 For a public macOS download, use a Developer ID signature and Apple's notarization service, then verify the downloaded package on a clean Mac. The artifact workflow stages ad hoc builds for testing. [Apple notarization guide](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+
+## Snap Store
+
+Build from a clean Linux checkout with Snapcraft and the Core 24 build environment. You can use Canonical's Snapcraft container when the host has Docker instead of LXD or Multipass.
+
+```sh
+docker run --rm -e SNAPCRAFT_BUILD_INFO=1 -v "$PWD:/project" ghcr.io/canonical/snapcraft:8_core24 pack
+```
+
+Test the exact package with strict confinement on a clean Ubuntu desktop. Verify the Wayland screenshot prompt and region selector, the GNOME shortcut, PNG export and clipboard copy, Library persistence and startup from a new login. On GNOME versions without a Global Shortcuts portal, add `snap run freezecut capture region` as a custom shortcut in Settings → Keyboard. Use `snap run freezecut capture full` for the full-screen shortcut.
+
+The snap keeps its Library in `~/snap/freezecut/common/.frameline/` across revisions. Use the DEB build for SSH or Tailscale library connections. To bring over the local history from a DEB install, quit both versions after installing the snap and copy the existing history without replacing Snap captures.
+
+```sh
+snap_history="$HOME/snap/freezecut/common/.frameline/history"
+mkdir -p -- "$snap_history"
+cp -an -- "$HOME/.frameline/history/." "$snap_history/"
+```
+
+Publish the exact application source under `v<version>-snap-store.<build>` on GitHub with the matching patched Qt source archive. The recipe in that tag contains the Linux build options for Qt and FreezeCut. To use modified Qt, rebuild the shared Qt libraries with the options in `snap/local/build-qt.sh`, link FreezeCut against that SDK and build a local snap. Upload the tested `.snap` with `snapcraft upload`, then release the validated revision to `stable`.
 
 ## Microsoft Store
 

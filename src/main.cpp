@@ -127,7 +127,12 @@ int main(int argc, char **argv)
     QLocale::setDefault(QLocale(QLocale::English));
     QApplication app(argc, argv);
     QApplication::setApplicationDisplayName(QStringLiteral("FreezeCut"));
+#ifdef FREEZECUT_LINUX_SNAP
+    QApplication::setDesktopFileName(qEnvironmentVariable("SNAP_INSTANCE_NAME", QStringLiteral("freezecut"))
+                                    + QStringLiteral("_freezecut"));
+#else
     QApplication::setDesktopFileName(QStringLiteral("io.github.xopoko.Frameline"));
+#endif
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/freezecut.png")));
 
     std::unique_ptr<SingleInstance> instance;

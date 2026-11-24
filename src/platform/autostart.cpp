@@ -50,6 +50,11 @@ QString entryPath(const QString &id = appId)
 {
 #ifdef Q_OS_MACOS
     return QDir::home().filePath(QStringLiteral("Library/LaunchAgents/") + id + QStringLiteral(".plist"));
+#elif defined(FREEZECUT_LINUX_SNAP)
+    const QString data = qEnvironmentVariable("SNAP_USER_DATA");
+    if (!QDir::isAbsolutePath(data))
+        return {};
+    return QDir(data).filePath(QStringLiteral(".config/autostart/") + id + QStringLiteral(".desktop"));
 #else
     const QString config = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
     if (config.isEmpty())

@@ -207,6 +207,11 @@ QString defaultSettingsDirectory()
     const QDir appSupport(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation));
     return appSupport.filePath(QStringLiteral("FreezeCut/.frameline"));
 #else
+#ifdef FREEZECUT_LINUX_SNAP
+    const QString common = qEnvironmentVariable("SNAP_USER_COMMON");
+    if (QDir::isAbsolutePath(common))
+        return QDir(common).filePath(QStringLiteral(".frameline"));
+#endif
     // Move the ScreenFrame folder into the existing profile with settings, queued uploads and a
     // library kept there. If the move fails, for example while an older process holds a file open,
     // keep using the old folder.

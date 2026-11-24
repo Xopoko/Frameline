@@ -170,11 +170,17 @@ private:
 
     QString fallback() const
     {
+#ifdef FREEZECUT_LINUX_SNAP
+        const QString command = QStringLiteral("snap run ")
+            + qEnvironmentVariable("SNAP_INSTANCE_NAME", QStringLiteral("freezecut"));
+#else
+        const QString command = QStringLiteral("freezecut");
+#endif
         return systemRegion_
             ? QStringLiteral("In your desktop keyboard settings, assign Super+S to "
-                 "freezecut capture region. Free the shortcut first if it is already in use.")
+                 "%1 capture region. Free the shortcut first if it is already in use.").arg(command)
             : QStringLiteral("In your desktop keyboard settings, assign Ctrl+Alt+Shift+1 and Ctrl+Alt+Shift+2 "
-                 "to freezecut capture full and freezecut capture region.");
+                 "to %1 capture full and %1 capture region.").arg(command);
     }
 
     GlobalShortcuts &owner_;

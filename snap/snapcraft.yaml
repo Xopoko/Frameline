@@ -1,0 +1,164 @@
+name: freezecut
+title: FreezeCut
+base: core24
+adopt-info: freezecut
+summary: Capture and annotate screenshots
+description: |
+  Freeze the screen and select a region, or capture the full screen. Mark up
+  screenshots with arrows, shapes, blur or redaction, then copy them or save
+  a PNG. Reopen originals in the local Library without an account.
+grade: stable
+confinement: strict
+license: MIT
+icon: resources/FreezeCut.png
+website: https://github.com/Xopoko/FreezeCut
+source-code: https://github.com/Xopoko/FreezeCut/releases/tag/v0.5.0-snap-store.1
+issues: https://github.com/Xopoko/FreezeCut/issues
+contact: https://github.com/Xopoko/FreezeCut/issues
+
+platforms:
+  amd64:
+
+plugs:
+  gpu-2404:
+    interface: content
+    target: $SNAP/gpu-2404
+    default-provider: mesa-2404
+
+apps:
+  freezecut:
+    command: usr/bin/freezecut
+    command-chain:
+      - bin/gpu-2404-wrapper
+      - bin/freezecut-launch
+    autostart: io.github.xopoko.Frameline.desktop
+    plugs:
+      - desktop
+      - desktop-legacy
+      - gpu-2404
+      - home
+      - network
+      - network-bind
+      - opengl
+      - wayland
+      - x11
+
+parts:
+  qt:
+    plugin: nil
+    source: snap/local
+    build-packages:
+      - build-essential
+      - cmake
+      - git
+      - libatspi2.0-dev
+      - libdbus-1-dev
+      - libegl-dev
+      - libfontconfig-dev
+      - libgl-dev
+      - libglib2.0-dev
+      - libopengl-dev
+      - libsm-dev
+      - libwayland-dev
+      - libx11-dev
+      - libx11-xcb-dev
+      - libxcb-cursor-dev
+      - libxcb-icccm4-dev
+      - libxcb-image0-dev
+      - libxcb-keysyms1-dev
+      - libxcb-randr0-dev
+      - libxcb-render-util0-dev
+      - libxcb-shape0-dev
+      - libxcb-shm0-dev
+      - libxcb-sync-dev
+      - libxcb-util-dev
+      - libxcb-xfixes0-dev
+      - libxcb-xkb-dev
+      - libxcb1-dev
+      - libxext-dev
+      - libxkbcommon-dev
+      - libxkbcommon-x11-dev
+      - libxrender-dev
+      - ninja-build
+      - pkg-config
+      - python3
+      - wayland-protocols
+    stage-packages:
+      - fontconfig
+      - fonts-dejavu-core
+      - libatspi2.0-0t64
+      - libdbus-1-3
+      - libegl1
+      - libgl1
+      - libglib2.0-0t64
+      - libopengl0
+      - libsm6
+      - libwayland-client0
+      - libwayland-cursor0
+      - libwayland-egl1
+      - libx11-xcb1
+      - libxcb-cursor0
+      - libxcb-icccm4
+      - libxcb-image0
+      - libxcb-keysyms1
+      - libxcb-randr0
+      - libxcb-render-util0
+      - libxcb-shape0
+      - libxcb-shm0
+      - libxcb-sync1
+      - libxcb-xfixes0
+      - libxcb-xkb1
+      - libxcb1
+      - libxext6
+      - libxkbcommon-x11-0
+      - libxrender1
+      - shared-mime-info
+      - wl-clipboard
+    override-build: |
+      sh "$CRAFT_PART_SRC/build-qt.sh" "$CRAFT_PROJECT_DIR" "$CRAFT_PART_BUILD" "$CRAFT_PART_INSTALL"
+    prime:
+      - -opt/qt6/bin/
+      - -opt/qt6/include/
+      - -opt/qt6/lib/*.a
+      - -opt/qt6/lib/*.prl
+      - -opt/qt6/lib/cmake/
+      - -opt/qt6/lib/pkgconfig/
+      - -opt/qt6/libexec/
+      - -opt/qt6/mkspecs/
+      - -opt/qt6/modules/
+      - -opt/qt6/sbom/
+
+  freezecut:
+    after: [qt]
+    plugin: nil
+    source: .
+    override-build: |
+      version="$(sed -nE 's/^project\(FreezeCut VERSION ([0-9.]+)[[:space:]].*$/\1/p' "$CRAFT_PART_SRC/CMakeLists.txt")"
+      test -n "$version"
+      craftctl set version="$version"
+      cmake -S "$CRAFT_PART_SRC" -B app-build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_PREFIX_PATH="$CRAFT_STAGE/opt/qt6" \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DFREEZECUT_LINUX_SNAP=ON
+      cmake --build app-build --parallel 12
+      ctest --test-dir app-build --output-on-failure
+      DESTDIR="$CRAFT_PART_INSTALL" cmake --install app-build
+      install -Dm755 "$CRAFT_PART_SRC/snap/local/freezecut-launch.sh" "$CRAFT_PART_INSTALL/bin/freezecut-launch"
+    prime:
+      - -usr/bin/frameline
+      - -usr/bin/screenframe
+      - -usr/share/applications/
+      - -usr/share/frameline/
+      - -usr/share/freezecut/
+
+  gpu-helpers:
+    after: [qt, freezecut]
+    plugin: nil
+    source: https://github.com/canonical/gpu-snap.git
+    source-commit: 7c4091ddcea8f969b98a752c48841af9b0a659d8
+    override-build: |
+      install -Dm755 "$CRAFT_PART_SRC/bin/gpu-2404-wrapper" "$CRAFT_PART_INSTALL/bin/gpu-2404-wrapper"
+    override-prime: |
+      craftctl default
+      CRAFT_TARGET_ARCH="${CRAFT_TARGET_ARCH:-$CRAFT_ARCH_BUILD_FOR}" "$CRAFT_PART_SRC/bin/gpu-2404-cleanup" mesa-2404
