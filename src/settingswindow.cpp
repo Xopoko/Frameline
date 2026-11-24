@@ -221,11 +221,18 @@ struct SettingsWindow::Ui {
         column->setSpacing(0);
         column->addWidget(theme::label(QStringLiteral("Settings"), "title", page));
         column->addSpacing(24);
+#ifndef FREEZECUT_WINDOWS_STORE
         addLibrary(column);
         column->addSpacing(28);
+#endif
         addStartup(column);
         column->addSpacing(28);
         addCapture(column);
+#ifdef FREEZECUT_WINDOWS_STORE
+        status = new StatusLine(page);
+        status->hide();
+        column->addWidget(status);
+#endif
         column->addStretch();
         scroll->setWidget(page);
         root->addWidget(scroll, 1);
@@ -236,7 +243,11 @@ struct SettingsWindow::Ui {
         syncForm();
         dialog.resize(600, 10);
         fitHeight();
+#ifdef FREEZECUT_WINDOWS_STORE
+        showEditorAfterCapture->setFocus();
+#else
         connection->setFocus();
+#endif
     }
 
     SettingsWindow &dialog;
@@ -301,6 +312,8 @@ struct SettingsWindow::Ui {
 #if defined(Q_OS_MACOS) && defined(FREEZECUT_MAC_APP_STORE)
         const auto startupDescription = QStringLiteral("macOS opens FreezeCut when you sign in. "
             "Manage approval in System Settings → General → Login Items.");
+#elif defined(FREEZECUT_WINDOWS_STORE)
+        const auto startupDescription = QStringLiteral("FreezeCut starts in the system tray, ready to capture.");
 #else
         const auto startupDescription = QStringLiteral("FreezeCut starts in the system tray, ready to capture and run your library.");
 #endif
@@ -607,6 +620,9 @@ struct SettingsWindow::Ui {
         result.showEditorAfterCapture = showEditorAfterCapture->isChecked();
         result.autoCopyScreenshot = autoCopyScreenshot->isChecked();
         result.useSystemRegionShortcut = takeover->isChecked();
+#ifdef FREEZECUT_WINDOWS_STORE
+        result.hostedLibrary.directory = saved.hostedLibrary.directory;
+#else
         result.hostedLibrary = saved.hostedLibrary;
         result.hostedLibrary.enabled = false;
         result.hostedLibrary.share = false;
@@ -643,6 +659,7 @@ struct SettingsWindow::Ui {
             if (error->isEmpty() && !library.isConfigured())
                 *error = QStringLiteral("Complete the library connection settings.");
         }
+#endif
         return result;
     }
 
@@ -670,10 +687,16 @@ struct SettingsWindow::Ui {
 
     void syncForm()
     {
+        const bool busy = testing || saving;
+        autostart->setEnabled(!busy && startupEditable);
+        for (QWidget *control : {static_cast<QWidget *>(save), static_cast<QWidget *>(showEditorAfterCapture),
+                                 static_cast<QWidget *>(autoCopyScreenshot), static_cast<QWidget *>(takeover)}) {
+            control->setEnabled(!busy);
+        }
+#ifndef FREEZECUT_WINDOWS_STORE
         const bool host = selectedMode == Host;
         const bool join = selectedMode == Connect;
         const bool manual = selectedMode == Advanced;
-        const bool busy = testing || saving;
         hostOfflineNote->setVisible(saved.hostedLibrary.enabled && !host);
         libraryDetails->setVisible(selectedMode != Off);
         hostDetails->setVisible(host);
@@ -683,12 +706,8 @@ struct SettingsWindow::Ui {
         sshHostRow->setVisible(manualTransport->current() == 1);
         test->setVisible(manual);
         connection->setEnabled(!busy);
-        autostart->setEnabled(!busy && startupEditable);
         for (QWidget *control : {libraryDetails, hostDetails, joinDetails, tailscaleDetails, manualDetails,
-                                 static_cast<QWidget *>(test), static_cast<QWidget *>(save),
-                                 static_cast<QWidget *>(showEditorAfterCapture),
-                                 static_cast<QWidget *>(autoCopyScreenshot),
-                                 static_cast<QWidget *>(takeover)}) {
+                                 static_cast<QWidget *>(test)}) {
             control->setEnabled(!busy);
         }
 
@@ -726,6 +745,7 @@ struct SettingsWindow::Ui {
             save->setAccessibleName(action);
             save->setFixedWidth(std::max(save->sizeHint().width(), 88));
         }
+#endif
     }
 
     bool readForm(AppSettings &result)

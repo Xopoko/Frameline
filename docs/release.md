@@ -24,6 +24,34 @@ Publish the corresponding Qt source bundle alongside the Windows and macOS packa
 
 For a public macOS download, use a Developer ID signature and Apple's notarization service, then verify the downloaded package on a clean Mac. The artifact workflow stages ad hoc builds for testing. [Apple notarization guide](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
 
+## Microsoft Store
+
+Use an x64 Visual C++ developer shell with CMake, Ninja, Python and the Windows SDK. Build the same pinned, shared Qt as the Windows ZIP and generate its notices.
+
+```powershell
+python scripts/release-qt.py source release-qt
+python scripts/build-release-qt.py release-qt/source release-qt/build release-qt/sdk --platform windows
+python scripts/release-qt.py notices release-qt/source release-qt/sdk release-qt/notices
+$env:Path = "$PWD/release-qt/sdk/bin;$env:Path"
+cmake -S . -B build-msix -G Ninja -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_PREFIX_PATH=release-qt/sdk -DFREEZECUT_QT_NOTICES_DIR=release-qt/notices `
+  -DFREEZECUT_WINDOWS_STORE=ON -DFREEZECUT_WINDOWS_STORE_BUILD_NUMBER=1
+cmake --build build-msix --parallel
+ctest --test-dir build-msix --output-on-failure
+```
+
+Copy the identity name, publisher and publisher display name from **Partner Center → Product identity**. Keep the final MSIX version component at zero for Store submission.
+
+```powershell
+./scripts/package-windows.ps1 -BuildDirectory build-msix -OutputMsix dist/FreezeCut-x64.msix `
+  -IdentityName '<package identity name>' -Publisher '<package publisher>' `
+  -PublisherDisplayName '<publisher display name>' -PackageVersion 1.0.0.0
+```
+
+Upload the unsigned MSIX to Partner Center. It runs on x64 Windows 10 version 2004 and later. Use a locally signed test package in an isolated Windows environment to check install, capture, Library and **Start FreezeCut when I sign in**. The Store build uses the local Library in the existing `%USERPROFILE%\.frameline` profile. When switching from the direct download, turn off its startup setting and close it before starting the Store build.
+
+Publish the application source and matching Qt archive under `v<version>-microsoft-store.<build>` on GitHub. **Open Source Licenses** in the tray menu links to that release. To run with modified Qt, unpack the MSIX into a writable directory with `MakeAppx.exe unpack /p FreezeCut-x64.msix /d FreezeCut`, replace the Qt DLLs in `bin` and the matching plugins in `plugins`, and open `bin/FreezeCutGUI.exe` directly. The app can also be rebuilt from source with an interface-compatible replacement Qt SDK.
+
 ## Mac App Store
 
 Use an Xcode-equipped Mac with CMake, Ninja and Python 3.12 or later. Prepare the pinned Qt inputs and build the shared SDK with App Store support. The default macOS SDK build includes Apple Silicon and Intel.

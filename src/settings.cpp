@@ -19,6 +19,9 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSysInfo>
+#ifdef FREEZECUT_WINDOWS_STORE
+#include <qt_windows.h>
+#endif
 
 #include <array>
 
@@ -416,6 +419,38 @@ bool saveSettings(const AppSettings &settings, const QString &directory, QString
         return false;
     }
     return true;
+}
+
+AppSettings loadDesktopSettings(const QString &directory, QString *error)
+{
+    AppSettings settings = loadSettings(directory, error);
+#ifdef FREEZECUT_WINDOWS_STORE
+    const QString hostedPath = QDir::fromNativeSeparators(settings.hostedLibrary.directory);
+    settings.library = {};
+    settings.hostedLibrary = {};
+    // Keep locally hosted captures readable, without following UNC or mapped network drives.
+    if (hostedPath.size() >= 3 && hostedPath.at(1) == u':' && hostedPath.at(2) == u'/') {
+        const QString volume = QDir::toNativeSeparators(hostedPath.first(3));
+        const auto type = GetDriveTypeW(reinterpret_cast<LPCWSTR>(volume.utf16()));
+        if (type == DRIVE_FIXED || type == DRIVE_REMOVABLE || type == DRIVE_RAMDISK)
+            settings.hostedLibrary.directory = QDir::toNativeSeparators(hostedPath);
+    }
+#endif
+    return settings;
+}
+
+bool saveDesktopSettings(const AppSettings &settings, const QString &directory, QString *error)
+{
+#ifdef FREEZECUT_WINDOWS_STORE
+    // The ZIP version uses the same profile and must keep its saved library connections.
+    const AppSettings existing = loadSettings(directory);
+    AppSettings persisted = settings;
+    persisted.library = existing.library;
+    persisted.hostedLibrary = existing.hostedLibrary;
+    return saveSettings(persisted, directory, error);
+#else
+    return saveSettings(settings, directory, error);
+#endif
 }
 
 QString libraryQueueDirectory(const LibrarySettings &settings, const QString &directory)

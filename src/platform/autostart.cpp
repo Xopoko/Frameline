@@ -24,7 +24,7 @@ bool fail(QString *error, const QString &message)
     return false;
 }
 
-#if !defined(Q_OS_MACOS) || !defined(FREEZECUT_MAC_APP_STORE)
+#if !defined(FREEZECUT_MAC_APP_STORE) && !defined(FREEZECUT_WINDOWS_STORE)
 QString executablePath()
 {
     const QFileInfo current(QCoreApplication::applicationFilePath());
@@ -239,7 +239,7 @@ bool isEnabled(QString *error)
     return snapshot(error).isEnabled();
 }
 
-#if !defined(Q_OS_MACOS) || !defined(FREEZECUT_MAC_APP_STORE)
+#if !defined(FREEZECUT_MAC_APP_STORE) && !defined(FREEZECUT_WINDOWS_STORE)
 State snapshot(QString *error)
 {
     if (error)

@@ -6,12 +6,32 @@
 #include <QTest>
 #include <QXmlStreamReader>
 
+#ifdef FREEZECUT_WINDOWS_STORE
+#include <qt_windows.h>
+#include <appmodel.h>
+#endif
+
 using namespace Qt::StringLiterals;
 
 class AutostartTests final : public QObject {
     Q_OBJECT
 
 private slots:
+#ifdef FREEZECUT_WINDOWS_STORE
+    void storeBuildNeedsPackageIdentityToRegister()
+    {
+        UINT32 length = 0;
+        if (GetCurrentPackageFullName(&length, nullptr) != APPMODEL_ERROR_NO_PACKAGE)
+            QSKIP("This test requires the unpackaged executable from the build directory.");
+
+        QString error;
+        QVERIFY(!Autostart::snapshot(&error).isEnabled());
+        QVERIFY(!error.isEmpty());
+        QVERIFY(!Autostart::setEnabled(true, &error));
+        QVERIFY(!error.isEmpty());
+    }
+#endif
+
     void windowsCommandUsesOneQuotedExecutable()
     {
         QCOMPARE(Autostart::Detail::windowsCommand(u"C:/Apps/Screen Frame/FreezeCutGUI.exe"_s),

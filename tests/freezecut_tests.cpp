@@ -77,7 +77,9 @@ private slots:
     void settingsValidation();
     void settingsDestinationKey();
     void settingsRoundTrip();
+#ifndef FREEZECUT_WINDOWS_STORE
     void settingsDialog();
+#endif
     void standaloneLibrary();
     void libraryRejectsStaleSettings();
 #if !defined(Q_OS_WIN) && !defined(FREEZECUT_MAC_APP_STORE)
@@ -353,6 +355,7 @@ void FreezeCutTests::settingsRoundTrip()
     }
 }
 
+#ifndef FREEZECUT_WINDOWS_STORE
 void FreezeCutTests::settingsDialog()
 {
     SettingsWindow window(AppSettings{});
@@ -406,6 +409,7 @@ void FreezeCutTests::settingsDialog()
     QVERIFY2(window.result() == QDialog::Accepted && window.settings().library.storageKey() == fixture.storageKey(),
              "Valid library settings should save with the selected connection.");
 }
+#endif
 
 void FreezeCutTests::standaloneLibrary()
 {

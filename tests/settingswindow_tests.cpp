@@ -4,6 +4,7 @@
 #include "tailscale.h"
 
 #include <QClipboard>
+#include <QDir>
 #include <QFile>
 #include <QGuiApplication>
 #include <QLineEdit>
@@ -28,8 +29,12 @@ class SettingsWindowTests : public QObject {
 
 private slots:
     void captureOptionsPersist();
+#ifdef FREEZECUT_WINDOWS_STORE
+    void localStoreSettingsKeepExistingConnections();
+#else
     void hostAndShare();
     void verifyNewConnectionBeforeSaving();
+#endif
 };
 
 void SettingsWindowTests::captureOptionsPersist()
@@ -73,6 +78,53 @@ void SettingsWindowTests::captureOptionsPersist()
     QVERIFY(copy && copy->isChecked());
 }
 
+#ifdef FREEZECUT_WINDOWS_STORE
+void SettingsWindowTests::localStoreSettingsKeepExistingConnections()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    AppSettings existing;
+    existing.library.transport = LibraryTransport::Tailscale;
+    existing.library.address = QStringLiteral("100.64.1.2");
+    existing.library.token = generateLibraryToken();
+    existing.library.device = QStringLiteral("Test device");
+    existing.library.autoArchive = true;
+    existing.hostedLibrary.enabled = true;
+    existing.hostedLibrary.share = true;
+    existing.hostedLibrary.directory = QDir::toNativeSeparators(directory.filePath(QStringLiteral("hosted")));
+    existing.hostedLibrary.token = generateLibraryToken();
+    QString error;
+    QVERIFY2(saveSettings(existing, directory.path(), &error), qPrintable(error));
+
+    auto active = loadDesktopSettings(directory.path(), &error);
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    QVERIFY(!active.library.isConfigured());
+    QVERIFY(!active.hostedLibrary.enabled && !active.hostedLibrary.share);
+    QCOMPARE(active.hostedLibrary.directory, existing.hostedLibrary.directory);
+
+    SettingsWindow window(active);
+    QVERIFY(!window.findChild<Segmented *>(QStringLiteral("libraryConnection")));
+    auto *preview = window.findChild<Toggle *>(QStringLiteral("showEditorAfterCapture"));
+    auto *save = buttonWithText(window, QStringLiteral("Save"));
+    QVERIFY(preview && save);
+    connect(&window, &SettingsWindow::saveRequested, this, [&](const AppSettings &settings, bool) {
+        QVERIFY2(saveDesktopSettings(settings, directory.path(), &error), qPrintable(error));
+        window.setSaveResult({}, settings);
+    });
+    preview->click();
+    save->click();
+    QCOMPARE(window.result(), int(QDialog::Accepted));
+    existing.showEditorAfterCapture = false;
+    QVERIFY(loadSettings(directory.path(), &error) == existing);
+    QVERIFY(error.isEmpty());
+
+    existing.hostedLibrary.directory = QStringLiteral("\\\\files.example\\freeze-cut");
+    QVERIFY2(saveSettings(existing, directory.path(), &error), qPrintable(error));
+    QVERIFY(loadDesktopSettings(directory.path(), &error).hostedLibrary.directory.isEmpty());
+    QCOMPARE(loadSettings(directory.path()).hostedLibrary.directory, existing.hostedLibrary.directory);
+}
+#else
 void SettingsWindowTests::hostAndShare()
 {
     SettingsWindow window(AppSettings{});
@@ -200,6 +252,8 @@ void SettingsWindowTests::verifyNewConnectionBeforeSaving()
     QCOMPARE(saves, 1);
     QCOMPARE(window.result(), int(QDialog::Accepted));
 }
+
+#endif
 
 QTEST_MAIN(SettingsWindowTests)
 #include "settingswindow_tests.moc"

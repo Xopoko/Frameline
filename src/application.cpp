@@ -14,6 +14,7 @@
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QProcess>
@@ -91,7 +92,7 @@ FreezeCutApplication::FreezeCutApplication(LaunchOptions options)
     : options_(std::move(options))
 {
     const QString directory = defaultSettingsDirectory();
-    settings_ = loadSettings(directory, &settingsError_);
+    settings_ = loadDesktopSettings(directory, &settingsError_);
     history_ = std::make_unique<LibraryClient>(directory, settings_.hostedLibrary.directory);
     libraryServer_ = std::make_unique<LibraryServer>();
     tailscale_ = std::make_unique<TailscaleMonitor>();
@@ -197,7 +198,7 @@ void FreezeCutApplication::start()
         trayMenu_->addAction(QStringLiteral("Open FreezeCut"), this, &FreezeCutApplication::showEditor);
         trayMenu_->addAction(QStringLiteral("Library"), this, &FreezeCutApplication::showLibrary);
         trayMenu_->addAction(QStringLiteral("Settings…"), this, &FreezeCutApplication::showSettings);
-#ifdef FREEZECUT_MAC_APP_STORE
+#if defined(FREEZECUT_MAC_APP_STORE) || defined(FREEZECUT_WINDOWS_STORE)
         trayMenu_->addAction(QStringLiteral("Privacy Policy"), this, [] {
             QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/Xopoko/FreezeCut/blob/main/PRIVACY.md")));
         });
@@ -205,16 +206,32 @@ void FreezeCutApplication::start()
             QMessageBox notice(QMessageBox::Information, QStringLiteral("Open Source Licenses"),
                 QStringLiteral("FreezeCut uses Qt Base under the GNU Lesser General Public License version 3."),
                 QMessageBox::Close);
+            const auto directory = QDir(QCoreApplication::applicationDirPath());
+#ifdef FREEZECUT_WINDOWS_STORE
+            // The package can read its bundled notices even when Explorer cannot open WindowsApps.
+            const QDir notices(directory.absoluteFilePath(QStringLiteral("../Qt-notices")));
+            QStringList licenseText;
+            for (const auto *fileName : {"README.txt", "THIRD-PARTY.txt", "upstream/LICENSES/LGPL-3.0-only.txt",
+                                        "upstream/LICENSES/GPL-3.0-only.txt"}) {
+                QFile file(notices.filePath(QString::fromLatin1(fileName)));
+                if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+                    licenseText.append(QString::fromUtf8(file.readAll()));
+            }
+            notice.setDetailedText(licenseText.join(QStringLiteral("\n\n")));
+#else
             auto *licenses = notice.addButton(QStringLiteral("View Licenses"), QMessageBox::ActionRole);
+#endif
             auto *source = notice.addButton(QStringLiteral("Get Source Code"), QMessageBox::ActionRole);
             notice.exec();
+#ifdef FREEZECUT_MAC_APP_STORE
             if (notice.clickedButton() == licenses) {
-                const auto directory = QDir(QCoreApplication::applicationDirPath());
                 QDesktopServices::openUrl(QUrl::fromLocalFile(directory.absoluteFilePath(
                     QStringLiteral("../Resources/Qt-notices"))));
-            } else if (notice.clickedButton() == source) {
-                QDesktopServices::openUrl(QUrl(QStringLiteral(FREEZECUT_MAC_STORE_SOURCE_URL)));
+                return;
             }
+#endif
+            if (notice.clickedButton() == source)
+                QDesktopServices::openUrl(QUrl(QStringLiteral(FREEZECUT_STORE_SOURCE_URL)));
         });
 #endif
         trayMenu_->addSeparator();
@@ -346,7 +363,7 @@ void FreezeCutApplication::showSettings()
     }
 
     QString settingsError;
-    const AppSettings saved = loadSettings(defaultSettingsDirectory(), &settingsError);
+    const AppSettings saved = loadDesktopSettings(defaultSettingsDirectory(), &settingsError);
     settingsWindow_ = std::make_unique<SettingsWindow>(saved);
     settingsWindow_->setTailscaleStatus(tailscale_->status());
     refreshHostedSharing();
@@ -421,7 +438,7 @@ void FreezeCutApplication::saveWindowSettings(AppSettings updated, bool autostar
         fail(error);
         return;
     }
-    if (!saveSettings(updated, defaultSettingsDirectory(), &error)) {
+    if (!saveDesktopSettings(updated, defaultSettingsDirectory(), &error)) {
         if (changeAutostart) {
             QString rollbackError;
             if (!Autostart::restore(previousAutostart, &rollbackError))

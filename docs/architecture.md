@@ -13,7 +13,7 @@ Everything except `main.cpp` is built into the `freezecut_core` static library, 
 | `editor`, `annotations` | Editor window. Annotations are vectors applied to the image in order; undo keeps small pixel patches and replays from the original once they are evicted. |
 | `shortcuts` | Global hotkeys: `RegisterHotKey` and a low-level hook for `Win+S` (`platform/windows_shortcuts`), Carbon hotkeys on macOS, the GlobalShortcuts portal on Wayland, XCB grabs on X11. |
 | `settings`, `settingswindow` | `~/.frameline/settings.json`, library connection codes and the settings dialog. |
-| `platform/autostart` | Registers `--tray` at user login through Windows Run, a macOS LaunchAgent or XDG autostart on Linux. |
+| `platform/autostart` | Manages launch at sign-in through Windows Run or an MSIX startup task, a macOS LaunchAgent or `SMAppService`, and XDG autostart on Linux. |
 | `libraryclient`, `librarystorage`, `librarywindow` | Local screenshot history, optional upload queue and shared library connection, and the library browser. |
 | `libraryserver` | Embedded library storage and API. |
 | `libraryprotocol` | The token, screenshot ID and size rules that the client, the embedded server and the settings share. |

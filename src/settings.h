@@ -54,4 +54,6 @@ std::optional<LibrarySettings> librarySettingsFromConnectionCode(const QString &
                                                                QString *error = nullptr);
 AppSettings loadSettings(const QString &directory, QString *error = nullptr);
 bool saveSettings(const AppSettings &settings, const QString &directory, QString *error = nullptr);
+AppSettings loadDesktopSettings(const QString &directory, QString *error = nullptr);
+bool saveDesktopSettings(const AppSettings &settings, const QString &directory, QString *error = nullptr);
 QString libraryQueueDirectory(const LibrarySettings &settings, const QString &directory);
