@@ -13,7 +13,7 @@ confinement: strict
 license: MIT
 icon: resources/FreezeCut.png
 website: https://github.com/Xopoko/FreezeCut
-source-code: https://github.com/Xopoko/FreezeCut/releases/tag/v0.5.0-snap-store.4
+source-code: https://github.com/Xopoko/FreezeCut/releases/tag/v0.5.1-snap-store.1
 issues: https://github.com/Xopoko/FreezeCut/issues
 contact: https://github.com/Xopoko/FreezeCut/issues
 
@@ -146,7 +146,7 @@ parts:
         -DCMAKE_PREFIX_PATH="$CRAFT_STAGE/opt/qt6" \
         -DCMAKE_INSTALL_PREFIX=/usr \
         -DFREEZECUT_LINUX_SNAP=ON \
-        -DFREEZECUT_SNAP_BUILD_NUMBER=4
+        -DFREEZECUT_SNAP_BUILD_NUMBER=1
       cmake --build app-build --parallel 12
       ctest --test-dir app-build --output-on-failure
       DESTDIR="$CRAFT_PART_INSTALL" cmake --install app-build

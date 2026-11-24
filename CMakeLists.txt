@@ -4,7 +4,7 @@ if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 14.4 CACHE STRING "Minimum macOS version")
 endif()
 
-project(FreezeCut VERSION 0.5.0 LANGUAGES CXX)
+project(FreezeCut VERSION 0.5.1 LANGUAGES CXX)
 
 option(FREEZECUT_MAC_APP_STORE "Build FreezeCut for the Mac App Store" OFF)
 option(FREEZECUT_WINDOWS_STORE "Build FreezeCut for the Microsoft Store" OFF)
