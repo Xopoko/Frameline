@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Frameline
+Name=FreezeCut
 Comment=Take and annotate screenshots
-Exec=frameline
+Exec=freezecut
 Icon=io.github.xopoko.Frameline
 Terminal=false
 Categories=Graphics;
@@ -11,8 +11,8 @@ Actions=Full;Region;
 
 [Desktop Action Full]
 Name=Capture screen
-Exec=frameline capture full
+Exec=freezecut capture full
 
 [Desktop Action Region]
 Name=Capture region
-Exec=frameline capture region
+Exec=freezecut capture region

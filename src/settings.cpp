@@ -33,12 +33,12 @@ std::optional<QJsonObject> readObject(const QString &path, QString *error)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly) || file.size() > 8192) {
-        report(error, QStringLiteral("Could not read Frameline settings."));
+        report(error, QStringLiteral("Could not read FreezeCut settings."));
         return {};
     }
     const auto document = QJsonDocument::fromJson(file.readAll());
     if (!document.isObject()) {
-        report(error, QStringLiteral("Frameline settings are not valid JSON."));
+        report(error, QStringLiteral("FreezeCut settings are not valid JSON."));
         return {};
     }
     return document.object();
@@ -143,7 +143,7 @@ QString LibrarySettings::validationError() const
     if (transport == LibraryTransport::Local && !sshHost.isEmpty())
         return QStringLiteral("A local connection does not use an SSH host.");
     if (transport == LibraryTransport::Tailscale && (!sshHost.isEmpty() || normalizedTailscaleAddress(address).isEmpty()))
-        return QStringLiteral("Paste a Frameline connection code with a valid Tailscale address.");
+        return QStringLiteral("Paste a FreezeCut connection code with a valid Tailscale address.");
     if (transport != LibraryTransport::Tailscale && !address.isEmpty())
         return QStringLiteral("A Tailscale address requires a Tailscale connection.");
     if (!LibraryProtocol::isToken(token))
@@ -191,7 +191,7 @@ static QString legacySettingsDirectory()
 
 QString defaultSettingsDirectory()
 {
-    // Frameline was called ScreenFrame. Move its folder once, with settings, queued uploads and a
+    // Move the ScreenFrame folder into the existing profile with settings, queued uploads and a
     // library kept there. If the move fails, for example while an older process holds a file open,
     // keep using the old folder.
     const QString current = QDir::home().filePath(QStringLiteral(".frameline"));
@@ -243,7 +243,7 @@ QString libraryConnectionCode(const LibrarySettings &settings)
 std::optional<LibrarySettings> librarySettingsFromConnectionCode(const QString &code, const QString &device,
                                                                QString *error)
 {
-    const QString invalid = QStringLiteral("Paste a valid Frameline connection code.");
+    const QString invalid = QStringLiteral("Paste a valid FreezeCut connection code.");
     report(error, invalid);
     if (code.size() > 512)
         return {};
@@ -275,7 +275,7 @@ std::optional<LibrarySettings> librarySettingsFromConnectionCode(const QString &
     return settings;
 }
 
-// A library folder inside the old ScreenFrame settings folder moved with it to the Frameline one.
+// A library folder inside the old ScreenFrame settings folder moved with it to the Frameline profile.
 static QString movedFromLegacyDirectory(const QString &path)
 {
     if (path.isEmpty())
@@ -300,7 +300,7 @@ AppSettings loadSettings(const QString &directory, QString *error)
         return {};
     if (object->value(QStringLiteral("schemaVersion")).toInt() != 1
         || !object->value(QStringLiteral("library")).isObject()) {
-        report(error, QStringLiteral("Unsupported Frameline settings format."));
+        report(error, QStringLiteral("Unsupported FreezeCut settings format."));
         return {};
     }
     QString readError;
@@ -336,12 +336,12 @@ bool saveSettings(const AppSettings &settings, const QString &directory, QString
     if (!validation.isEmpty())
         return false;
     if (!QDir().mkpath(directory)) {
-        report(error, QStringLiteral("Could not create the Frameline settings folder."));
+        report(error, QStringLiteral("Could not create the FreezeCut settings folder."));
         return false;
     }
 #ifndef Q_OS_WIN
     if (!QFile::setPermissions(directory, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner)) {
-        report(error, QStringLiteral("Could not protect the Frameline settings folder."));
+        report(error, QStringLiteral("Could not protect the FreezeCut settings folder."));
         return false;
     }
 #endif
@@ -373,7 +373,7 @@ bool saveSettings(const AppSettings &settings, const QString &directory, QString
         || !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)
 #endif
         || file.write(bytes) != bytes.size() || !file.commit()) {
-        report(error, QStringLiteral("Could not save Frameline settings. %1").arg(file.errorString()));
+        report(error, QStringLiteral("Could not save FreezeCut settings. %1").arg(file.errorString()));
         return false;
     }
     return true;

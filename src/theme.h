@@ -10,7 +10,7 @@ class QLabel;
 class QPainter;
 class QWidget;
 
-// Frameline's design tokens: the light and dark palettes, the type scale, the style sheet for
+// FreezeCut's design tokens: the light and dark palettes, the type scale, the style sheet for
 // standard controls, and the painting primitives shared by every window.
 namespace theme {
 

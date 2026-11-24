@@ -40,7 +40,7 @@ QStringList commandLine(int argc, char **argv)
 
 int argumentError(const QString &message)
 {
-    QTextStream(stderr) << "frameline: " << message << "\nUse --help for usage.\n";
+    QTextStream(stderr) << "freezecut: " << message << "\nUse --help for usage.\n";
     return 1;
 }
 
@@ -48,17 +48,17 @@ int argumentError(const QString &message)
 
 int main(int argc, char **argv)
 {
-    QCoreApplication::setApplicationName(QStringLiteral("Frameline"));
-    QCoreApplication::setOrganizationName(QStringLiteral("Frameline"));
-    QCoreApplication::setApplicationVersion(QStringLiteral(FRAMELINE_VERSION));
+    QCoreApplication::setApplicationName(QStringLiteral("FreezeCut"));
+    QCoreApplication::setOrganizationName(QStringLiteral("FreezeCut"));
+    QCoreApplication::setApplicationVersion(QStringLiteral(FREEZECUT_VERSION));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral(
         "Capture and annotate screenshots.\n\n"
-        "frameline [--tray]\n"
-        "frameline library\n"
-        "frameline settings\n"
-        "frameline capture full|region [--output <file.png>] [--no-preview]"));
+        "freezecut [--tray]\n"
+        "freezecut library\n"
+        "freezecut settings\n"
+        "freezecut capture full|region [--output <file.png>] [--no-preview]"));
     const auto help = parser.addHelpOption();
     const auto version = parser.addVersionOption();
     parser.addPositionalArgument(QStringLiteral("command"), QStringLiteral("Open the library, settings or capture the screen."),
@@ -126,9 +126,9 @@ int main(int argc, char **argv)
 #endif
     QLocale::setDefault(QLocale(QLocale::English));
     QApplication app(argc, argv);
-    QApplication::setApplicationDisplayName(QStringLiteral("Frameline"));
+    QApplication::setApplicationDisplayName(QStringLiteral("FreezeCut"));
     QApplication::setDesktopFileName(QStringLiteral("io.github.xopoko.Frameline"));
-    QApplication::setWindowIcon(QIcon(QStringLiteral(":/frameline.png")));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/freezecut.png")));
 
     std::unique_ptr<SingleInstance> instance;
     if (!capture) {
@@ -149,7 +149,7 @@ int main(int argc, char **argv)
         }
     }
 
-    FramelineApplication controller(std::move(options));
+    FreezeCutApplication controller(std::move(options));
     if (instance) {
         QObject::connect(instance.get(), &SingleInstance::activationRequested, &controller,
                          [&controller](SingleInstance::Request request) {

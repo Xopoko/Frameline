@@ -15,14 +15,14 @@ if [[ -e "$output" || -L "$output" ]]; then
     exit 1
 fi
 
-work=$(mktemp -d "$output_dir/.frameline-package.XXXXXXXX")
+work=$(mktemp -d "$output_dir/.freezecut-package.XXXXXXXX")
 trap 'rm -rf -- "$work"' EXIT
 stage="$work/stage"
 cmake --install "$build_dir" --config Release --prefix "$stage"
-bundle="$stage/Frameline.app"
+bundle="$stage/FreezeCut.app"
 plugins="$bundle/Contents/PlugIns"
 frameworks="$bundle/Contents/Frameworks"
-executable="$bundle/Contents/MacOS/Frameline"
+executable="$bundle/Contents/MacOS/FreezeCut"
 
 test -f "$plugins/platforms/libqcocoa.dylib"
 # PNG is built in. Keep JPEG support for library thumbnails.
@@ -61,9 +61,9 @@ else
 fi
 
 ln -s /Applications "$stage/Applications"
-image="$work/Frameline.dmg"
+image="$work/FreezeCut.dmg"
 for attempt in 1 2 3; do
-    if hdiutil create -fs HFS+ -format UDZO -volname Frameline -srcfolder "$stage" "$image" >"$work/create.log" 2>&1; then
+    if hdiutil create -fs HFS+ -format UDZO -volname FreezeCut -srcfolder "$stage" "$image" >"$work/create.log" 2>&1; then
         cat "$work/create.log"
         break
     fi

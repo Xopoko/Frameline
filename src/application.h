@@ -27,10 +27,10 @@ struct LaunchOptions {
     bool preview = true;
 };
 
-class FramelineApplication final : public QObject {
+class FreezeCutApplication final : public QObject {
 public:
-    explicit FramelineApplication(LaunchOptions options);
-    ~FramelineApplication() override;
+    explicit FreezeCutApplication(LaunchOptions options);
+    ~FreezeCutApplication() override;
     void start();
     void activate(LaunchOptions::Mode mode);
 

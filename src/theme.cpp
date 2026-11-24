@@ -65,7 +65,8 @@ const Palette lightPalette{
 
 bool systemPrefersDark()
 {
-    const QByteArray forced = qgetenv("FRAMELINE_THEME").toLower();
+    const QByteArray forced = qEnvironmentVariableIsSet("FREEZECUT_THEME")
+        ? qgetenv("FREEZECUT_THEME").toLower() : qgetenv("FRAMELINE_THEME").toLower();
     if (forced == "light" || forced == "dark") {
         return forced == "dark";
     }

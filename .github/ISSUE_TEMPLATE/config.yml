@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security issue
-    url: https://github.com/Xopoko/Frameline/security/advisories/new
+    url: https://github.com/Xopoko/FreezeCut/security/advisories/new
     about: Report vulnerabilities privately. Please don't open a public issue.

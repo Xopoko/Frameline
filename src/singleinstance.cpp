@@ -32,8 +32,9 @@ constexpr char acknowledged = 'K';
 QString defaultRuntimeDirectory()
 {
 #ifdef Q_OS_WIN
-    return QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
-        .filePath(QStringLiteral("runtime"));
+    // Share the runtime with releases published as Frameline.
+    return QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
+        .filePath(QStringLiteral("Frameline/Frameline/runtime"));
 #else
     const QString name = QStringLiteral("frameline-%1").arg(geteuid());
     const QString runtime = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
@@ -154,7 +155,7 @@ SingleInstance::Result SingleInstance::start(Request request, QString *error)
         return Result::Failed;
     };
     if (!prepareRuntimeDirectory(runtimeDirectory_))
-        return fail(QStringLiteral("Could not open Frameline’s private runtime folder."));
+        return fail(QStringLiteral("Could not open FreezeCut’s private runtime folder."));
 
     const QString name = endpointName(runtimeDirectory_);
     lock_ = std::make_unique<QLockFile>(QDir(runtimeDirectory_).filePath(QStringLiteral("desktop.lock")));
@@ -167,10 +168,10 @@ SingleInstance::Result SingleInstance::start(Request request, QString *error)
             if (server_->listen(name))
                 return Result::Primary;
             lock_->unlock();
-            return fail(QStringLiteral("Could not start Frameline’s local connection. %1").arg(server_->errorString()));
+            return fail(QStringLiteral("Could not start FreezeCut’s local connection. %1").arg(server_->errorString()));
         }
         if (lock_->error() != QLockFile::LockFailedError)
-            return fail(QStringLiteral("Could not lock Frameline’s runtime folder."));
+            return fail(QStringLiteral("Could not lock FreezeCut’s runtime folder."));
 
         QLocalSocket socket;
         socket.setReadBufferSize(1);
@@ -182,7 +183,7 @@ SingleInstance::Result SingleInstance::start(Request request, QString *error)
         }
         QThread::msleep(30);
     } while (elapsed.elapsed() < activationTimeoutMs);
-    return fail(QStringLiteral("Frameline is already running but could not be opened. Try again in a moment."));
+    return fail(QStringLiteral("FreezeCut is already running but could not be opened. Try again in a moment."));
 }
 
 bool SingleInstance::requestSettings()

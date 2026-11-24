@@ -11,7 +11,7 @@ class QLabel;
 class QTimer;
 class QVariantAnimation;
 
-// The controls every Frameline window is built from. They paint themselves from the theme
+// The controls every FreezeCut window is built from. They paint themselves from the theme
 // palette, so they follow light and dark without per-widget style sheets.
 
 enum class Icon {

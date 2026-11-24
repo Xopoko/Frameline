@@ -425,7 +425,7 @@ struct LibraryWindow::Ui {
     Ui(LibraryWindow &owner, LibraryClient &primary, LibraryClient *shared)
         : window(owner), primary(primary), shared(shared), client(&primary)
     {
-        window.setWindowTitle(QStringLiteral("Library — Frameline"));
+        window.setWindowTitle(QStringLiteral("Library — FreezeCut"));
         window.setMinimumSize(560, 420);
         window.resize(980, 700);
 
@@ -965,7 +965,7 @@ struct LibraryWindow::Ui {
             }
             if (!error.isEmpty() || image.isNull()) {
                 viewerState->set(Icon::Warning, QStringLiteral("Couldn’t open this screenshot"),
-                                 error.isEmpty() ? QStringLiteral("The library returned an image Frameline can’t read.") : error,
+                                 error.isEmpty() ? QStringLiteral("The library returned an image FreezeCut can’t read.") : error,
                                  QStringLiteral("Try again"));
                 return;
             }

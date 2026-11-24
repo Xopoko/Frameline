@@ -718,7 +718,7 @@ bool LibraryServer::start(const QString &dataDir, const QString &token, quint16 
     lock->setStaleLockTime(0);
     if (!lock->tryLock(0)) {
         return report(error, lock->error() == QLockFile::LockFailedError
-                                 ? QStringLiteral("Another Frameline is running this library.")
+                                 ? QStringLiteral("Another FreezeCut is running this library.")
                                  : QStringLiteral("Could not lock the library folder."));
     }
     if (!d->local.listen(QHostAddress::LocalHost, port))

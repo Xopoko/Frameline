@@ -31,7 +31,7 @@
 
 namespace {
 
-// Time for the compositor to remove Frameline's own windows from the screen before capturing.
+// Time for the compositor to remove FreezeCut's own windows from the screen before capturing.
 constexpr int compositorDelayMs = 180;
 
 void bringToFront(QWidget &window)
@@ -56,7 +56,7 @@ bool copyToWaylandClipboard(const QImage &image)
     if (!png.open(QIODevice::WriteOnly) || !image.save(&png, "PNG"))
         return false;
 
-    // wl-copy can set the selection without focus on Frameline and keep it after exit.
+    // wl-copy can set the selection without focus on FreezeCut and keep it after exit.
     QProcess copy;
     copy.setStandardOutputFile(QProcess::nullDevice());
     copy.setStandardErrorFile(QProcess::nullDevice());
@@ -85,7 +85,7 @@ void copyScreenshotToClipboard(const QImage &image)
 
 } // namespace
 
-FramelineApplication::FramelineApplication(LaunchOptions options)
+FreezeCutApplication::FreezeCutApplication(LaunchOptions options)
     : options_(std::move(options))
 {
     const QString directory = defaultSettingsDirectory();
@@ -122,9 +122,9 @@ FramelineApplication::FramelineApplication(LaunchOptions options)
         });
     });
     connect(&shortcuts_, &GlobalShortcuts::captureRequested, this, [this](bool region) { beginCapture(region); });
-    connect(&shortcuts_, &GlobalShortcuts::statusChanged, this, &FramelineApplication::refreshShortcuts);
-    connect(&capture_, &ScreenCapture::failed, this, &FramelineApplication::failCapture);
-    connect(&capture_, &ScreenCapture::portalPermissionRequired, this, &FramelineApplication::requestPortalPermission);
+    connect(&shortcuts_, &GlobalShortcuts::statusChanged, this, &FreezeCutApplication::refreshShortcuts);
+    connect(&capture_, &ScreenCapture::failed, this, &FreezeCutApplication::failCapture);
+    connect(&capture_, &ScreenCapture::portalPermissionRequired, this, &FreezeCutApplication::requestPortalPermission);
     connect(&capture_, &ScreenCapture::cancelled, this, [this] { finishCapture({}); });
     connect(&capture_, &ScreenCapture::captured, this, [this](const QList<CaptureFrame> &frames) {
         if (std::exchange(portalAuthorizing_, false)) {
@@ -142,26 +142,26 @@ FramelineApplication::FramelineApplication(LaunchOptions options)
     });
 }
 
-FramelineApplication::~FramelineApplication() = default;
+FreezeCutApplication::~FreezeCutApplication() = default;
 
-void FramelineApplication::connectLibraryClient()
+void FreezeCutApplication::connectLibraryClient()
 {
-    connect(libraryClient_.get(), &LibraryClient::syncStatusChanged, this, &FramelineApplication::refreshLibraryStatus);
+    connect(libraryClient_.get(), &LibraryClient::syncStatusChanged, this, &FreezeCutApplication::refreshLibraryStatus);
 }
 
-bool FramelineApplication::isDesktop() const
+bool FreezeCutApplication::isDesktop() const
 {
     return options_.mode == LaunchOptions::Mode::Desktop || options_.mode == LaunchOptions::Mode::Library
         || options_.mode == LaunchOptions::Mode::Settings;
 }
 
-void FramelineApplication::start()
+void FreezeCutApplication::start()
 {
     // The capture overlay can briefly be the last visible window. Closing the final editor
     // should also give the Library time to save the capture.
     QApplication::setQuitOnLastWindowClosed(false);
     if (isDesktop()) {
-        Autostart::moveFromScreenFrame();
+        Autostart::refreshAtStartup();
         startHostedLibrary(settings_.hostedLibrary, &hostedLibraryError_);
         if (settings_.library.transport == LibraryTransport::Local
             && settings_.hostedLibrary.enabled && settings_.library.token == settings_.hostedLibrary.token)
@@ -186,17 +186,17 @@ void FramelineApplication::start()
 
     if (QSystemTrayIcon::isSystemTrayAvailable()) {
         tray_.setIcon(QApplication::windowIcon());
-        tray_.setToolTip(libraryMessage_.isEmpty() ? QStringLiteral("Frameline") : libraryMessage_);
+        tray_.setToolTip(libraryMessage_.isEmpty() ? QStringLiteral("FreezeCut") : libraryMessage_);
         trayMenu_ = std::make_unique<QMenu>();
         // Capturing is what the tray is for, so it comes first.
         trayMenu_->addAction(QStringLiteral("Capture Region"), this, [this] { beginCapture(true, true); });
         trayMenu_->addAction(QStringLiteral("Capture Screen"), this, [this] { beginCapture(false, true); });
         trayMenu_->addSeparator();
-        trayMenu_->addAction(QStringLiteral("Open Frameline"), this, &FramelineApplication::showEditor);
-        trayMenu_->addAction(QStringLiteral("Library"), this, &FramelineApplication::showLibrary);
-        trayMenu_->addAction(QStringLiteral("Settings…"), this, &FramelineApplication::showSettings);
+        trayMenu_->addAction(QStringLiteral("Open FreezeCut"), this, &FreezeCutApplication::showEditor);
+        trayMenu_->addAction(QStringLiteral("Library"), this, &FreezeCutApplication::showLibrary);
+        trayMenu_->addAction(QStringLiteral("Settings…"), this, &FreezeCutApplication::showSettings);
         trayMenu_->addSeparator();
-        trayMenu_->addAction(QStringLiteral("Quit Frameline"), this, &FramelineApplication::quitDesktop);
+        trayMenu_->addAction(QStringLiteral("Quit FreezeCut"), this, &FreezeCutApplication::quitDesktop);
         tray_.setContextMenu(trayMenu_.get());
         connect(&tray_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
             if (reason == QSystemTrayIcon::Trigger) {
@@ -218,7 +218,7 @@ void FramelineApplication::start()
     }
 }
 
-void FramelineApplication::activate(LaunchOptions::Mode mode)
+void FreezeCutApplication::activate(LaunchOptions::Mode mode)
 {
     if (settingsWindow_) {
         bringToFront(*settingsWindow_);
@@ -231,7 +231,7 @@ void FramelineApplication::activate(LaunchOptions::Mode mode)
     }
 }
 
-bool FramelineApplication::startHostedLibrary(const HostedLibrarySettings &settings, QString *error)
+bool FreezeCutApplication::startHostedLibrary(const HostedLibrarySettings &settings, QString *error)
 {
     libraryServer_->stop();
     if (error)
@@ -242,7 +242,7 @@ bool FramelineApplication::startHostedLibrary(const HostedLibrarySettings &setti
     return libraryServer_->start(settings.directory, settings.token, quint16(settings.port), error);
 }
 
-void FramelineApplication::refreshHostedSharing()
+void FreezeCutApplication::refreshHostedSharing()
 {
     hostedSharingError_.clear();
     QString address;
@@ -263,7 +263,7 @@ void FramelineApplication::refreshHostedSharing()
                                         hostedLibraryError_.isEmpty() ? hostedSharingError_ : hostedLibraryError_);
 }
 
-EditorWindow &FramelineApplication::editor()
+EditorWindow &FreezeCutApplication::editor()
 {
     if (!editor_) {
         editor_ = std::make_unique<EditorWindow>();
@@ -271,14 +271,14 @@ EditorWindow &FramelineApplication::editor()
         editor_->setLibraryStatus(libraryMessage_);
         connect(editor_.get(), &EditorWindow::fullCaptureRequested, this, [this] { beginCapture(false); });
         connect(editor_.get(), &EditorWindow::regionCaptureRequested, this, [this] { beginCapture(true); });
-        connect(editor_.get(), &EditorWindow::libraryRequested, this, &FramelineApplication::showLibrary);
-        connect(editor_.get(), &EditorWindow::settingsRequested, this, &FramelineApplication::showSettings);
-        connect(editor_.get(), &EditorWindow::closeAccepted, this, &FramelineApplication::archivePreview);
+        connect(editor_.get(), &EditorWindow::libraryRequested, this, &FreezeCutApplication::showLibrary);
+        connect(editor_.get(), &EditorWindow::settingsRequested, this, &FreezeCutApplication::showSettings);
+        connect(editor_.get(), &EditorWindow::closeAccepted, this, &FreezeCutApplication::archivePreview);
     }
     return *editor_;
 }
 
-void FramelineApplication::showEditor()
+void FreezeCutApplication::showEditor()
 {
     if (busy_ || quitting_) {
         return;
@@ -286,7 +286,7 @@ void FramelineApplication::showEditor()
     bringToFront(editor());
 }
 
-void FramelineApplication::showLibrary()
+void FreezeCutApplication::showLibrary()
 {
     if (busy_ || quitting_) {
         return;
@@ -294,13 +294,13 @@ void FramelineApplication::showLibrary()
     if (!library_) {
         library_ = std::make_unique<LibraryWindow>(*history_, nullptr,
                                                   libraryClient_->isConfigured() ? libraryClient_.get() : nullptr);
-        connect(library_.get(), &LibraryWindow::settingsRequested, this, &FramelineApplication::showSettings,
+        connect(library_.get(), &LibraryWindow::settingsRequested, this, &FreezeCutApplication::showSettings,
                 Qt::QueuedConnection);
     }
     bringToFront(*library_);
 }
 
-void FramelineApplication::showSettings()
+void FreezeCutApplication::showSettings()
 {
     if (busy_ || quitting_ || settingsWindow_)
         return;
@@ -310,7 +310,7 @@ void FramelineApplication::showSettings()
         QProcess desktop;
         QString executable = QCoreApplication::applicationFilePath();
 #ifdef Q_OS_WIN
-        executable = QFileInfo(executable).dir().filePath(QStringLiteral("FramelineGUI.exe"));
+        executable = QFileInfo(executable).dir().filePath(QStringLiteral("FreezeCutGUI.exe"));
         desktop.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *arguments) {
             arguments->flags |= CREATE_NO_WINDOW;
         });
@@ -318,8 +318,8 @@ void FramelineApplication::showSettings()
         desktop.setProgram(executable);
         desktop.setArguments({QStringLiteral("settings")});
         if (!desktop.startDetached())
-            QMessageBox::warning(editor_.get(), QStringLiteral("Frameline settings"),
-                                 QStringLiteral("Open Frameline from your applications to change settings."));
+            QMessageBox::warning(editor_.get(), QStringLiteral("FreezeCut settings"),
+                                 QStringLiteral("Open FreezeCut from your applications to change settings."));
         return;
     }
 
@@ -329,7 +329,7 @@ void FramelineApplication::showSettings()
     settingsWindow_->setTailscaleStatus(tailscale_->status());
     refreshHostedSharing();
     connect(settingsWindow_.get(), &SettingsWindow::refreshTailscaleRequested, tailscale_.get(), &TailscaleMonitor::refresh);
-    connect(settingsWindow_.get(), &SettingsWindow::saveRequested, this, &FramelineApplication::saveWindowSettings);
+    connect(settingsWindow_.get(), &SettingsWindow::saveRequested, this, &FreezeCutApplication::saveWindowSettings);
     connect(settingsWindow_.get(), &SettingsWindow::testRequested, this, [this](const LibrarySettings &settings) {
         testClient_ = std::make_unique<LibraryClient>(settings);
         testClient_->list({}, settingsWindow_.get(), [this](QList<LibraryItem>, const QString &, const QString &error) {
@@ -337,7 +337,7 @@ void FramelineApplication::showSettings()
         });
     });
     if (!settingsError.isEmpty()) {
-        QMessageBox::warning(settingsWindow_.get(), QStringLiteral("Frameline settings"),
+        QMessageBox::warning(settingsWindow_.get(), QStringLiteral("FreezeCut settings"),
                              settingsError + QStringLiteral("\n\nSave new settings to replace the unreadable configuration."));
     }
     if (saved.hostedLibrary.share || saved.library.transport == LibraryTransport::Tailscale)
@@ -349,7 +349,7 @@ void FramelineApplication::showSettings()
         showLibrary();
 }
 
-void FramelineApplication::saveWindowSettings(AppSettings updated, bool autostart)
+void FreezeCutApplication::saveWindowSettings(AppSettings updated, bool autostart)
 {
     if (!settingsWindow_)
         return;
@@ -437,7 +437,7 @@ void FramelineApplication::saveWindowSettings(AppSettings updated, bool autostar
     if (shortcutChanged || keepPreviewLocal) {
         QString message;
         if (shortcutChanged)
-            message = QStringLiteral("Quit and reopen Frameline to apply the shortcut change.");
+            message = QStringLiteral("Quit and reopen FreezeCut to apply the shortcut change.");
         if (keepPreviewLocal) {
             if (!message.isEmpty())
                 message += QStringLiteral("\n\n");
@@ -451,7 +451,7 @@ void FramelineApplication::saveWindowSettings(AppSettings updated, bool autostar
         tailscale_->refresh();
 }
 
-void FramelineApplication::quitDesktop()
+void FreezeCutApplication::quitDesktop()
 {
     if (quitting_ || settingsWindow_) {
         return;
@@ -470,7 +470,7 @@ void FramelineApplication::quitDesktop()
     exitAfterLibrarySync();
 }
 
-void FramelineApplication::beginCapture(bool region, bool fromTrayMenu)
+void FreezeCutApplication::beginCapture(bool region, bool fromTrayMenu)
 {
     if (busy_ || quitting_ || settingsWindow_) {
         return;
@@ -506,11 +506,11 @@ void FramelineApplication::beginCapture(bool region, bool fromTrayMenu)
     captureAfterHiding(surfaceWasVisible);
 }
 
-void FramelineApplication::captureAfterHiding(bool surfaceWasVisible)
+void FreezeCutApplication::captureAfterHiding(bool surfaceWasVisible)
 {
     const auto capture = [this] { capture_.capture(region_); };
 #ifdef Q_OS_MACOS
-    // ScreenCaptureKit filters out Frameline even while its windows are being hidden.
+    // ScreenCaptureKit filters out FreezeCut even while its windows are being hidden.
     Q_UNUSED(surfaceWasVisible);
     QTimer::singleShot(0, this, capture);
 #else
@@ -532,7 +532,7 @@ void FramelineApplication::captureAfterHiding(bool surfaceWasVisible)
 #endif
 }
 
-void FramelineApplication::finishCapture(QImage image, const std::function<void()> &dismissSelection)
+void FreezeCutApplication::finishCapture(QImage image, const std::function<void()> &dismissSelection)
 {
     busy_ = false;
     portalAuthorizing_ = false;
@@ -610,7 +610,7 @@ void FramelineApplication::finishCapture(QImage image, const std::function<void(
     }
 }
 
-void FramelineApplication::failCapture(const QString &message)
+void FreezeCutApplication::failCapture(const QString &message)
 {
     busy_ = false;
     portalAuthorizing_ = false;
@@ -618,7 +618,7 @@ void FramelineApplication::failCapture(const QString &message)
     if (!isDesktop() && !previewOpened_) {
         QTextStream(stderr) << message << Qt::endl;
         if (options_.preview && settings_.showEditorAfterCapture) {
-            QMessageBox::warning(nullptr, QStringLiteral("Frameline"), message);
+            QMessageBox::warning(nullptr, QStringLiteral("FreezeCut"), message);
         }
         exitCode_ = 1;
         exitAfterLibrarySync();
@@ -633,7 +633,7 @@ void FramelineApplication::failCapture(const QString &message)
     }
 }
 
-void FramelineApplication::requestPortalPermission(const QString &message)
+void FreezeCutApplication::requestPortalPermission(const QString &message)
 {
     if (!options_.preview || std::exchange(portalAuthorizationAttempted_, true)) {
         failCapture(message);
@@ -644,7 +644,7 @@ void FramelineApplication::requestPortalPermission(const QString &message)
     bringToFront(window);
     QMessageBox dialog(QMessageBox::Question, QStringLiteral("Screen Capture Permission"), message,
                        QMessageBox::NoButton, &window);
-    dialog.setInformativeText(QStringLiteral("Frameline will request access with this window open. "
+    dialog.setInformativeText(QStringLiteral("FreezeCut will request access with this window open. "
                                               "Once approved, it will hide the window and take a new screenshot."));
     const auto *retry = dialog.addButton(QStringLiteral("Request Access"), QMessageBox::AcceptRole);
     dialog.addButton(QMessageBox::Cancel);
@@ -659,7 +659,7 @@ void FramelineApplication::requestPortalPermission(const QString &message)
     QTimer::singleShot(compositorDelayMs, this, [this] { capture_.capture(region_, editor_.get()); });
 }
 
-void FramelineApplication::restoreWindows()
+void FreezeCutApplication::restoreWindows()
 {
     if (std::exchange(restoreEditor_, false)) {
         showEditor();
@@ -669,7 +669,7 @@ void FramelineApplication::restoreWindows()
     }
 }
 
-void FramelineApplication::archivePreview()
+void FreezeCutApplication::archivePreview()
 {
     if (!previewCapture_.capturedAt.isValid()) {
         return;
@@ -680,7 +680,7 @@ void FramelineApplication::archivePreview()
     }
 }
 
-bool FramelineApplication::flushLibrary()
+bool FreezeCutApplication::flushLibrary()
 {
     const bool historySaved = history_->flushPendingWrites();
     const bool queueSaved = libraryClient_->flushPendingWrites();
@@ -699,7 +699,7 @@ bool FramelineApplication::flushLibrary()
     return false;
 }
 
-void FramelineApplication::exitAfterLibrarySync()
+void FreezeCutApplication::exitAfterLibrarySync()
 {
     if (quitting_) {
         return;
@@ -729,7 +729,7 @@ void FramelineApplication::exitAfterLibrarySync()
     QTimer::singleShot(syncWaitMs, this, exit);
 }
 
-void FramelineApplication::refreshLibraryStatus(int pending, const QString &error)
+void FreezeCutApplication::refreshLibraryStatus(int pending, const QString &error)
 {
     syncError_ = error;
     const QString message = !historyError_.isEmpty() ? historyError_
@@ -741,13 +741,13 @@ void FramelineApplication::refreshLibraryStatus(int pending, const QString &erro
     } else {
         libraryMessage_ = QStringLiteral("Library: %1").arg(message);
     }
-    tray_.setToolTip(libraryMessage_.isEmpty() ? QStringLiteral("Frameline") : libraryMessage_);
+    tray_.setToolTip(libraryMessage_.isEmpty() ? QStringLiteral("FreezeCut") : libraryMessage_);
     if (editor_) {
         editor_->setLibraryStatus(libraryMessage_);
     }
 }
 
-void FramelineApplication::refreshShortcuts(bool full, bool region, const QString &message)
+void FreezeCutApplication::refreshShortcuts(bool full, bool region, const QString &message)
 {
     fullShortcut_ = full ? shortcuts_.description(false) : QString{};
     regionShortcut_ = region ? shortcuts_.description(true) : QString{};

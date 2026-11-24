@@ -317,7 +317,7 @@ public:
     explicit Brand(QWidget *parent) : QWidget(parent)
     {
         setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        setAccessibleName(QStringLiteral("Frameline"));
+        setAccessibleName(QStringLiteral("FreezeCut"));
     }
 
     QSize sizeHint() const override
@@ -343,7 +343,7 @@ protected:
     }
 
 private:
-    static QString text() { return QStringLiteral("Frameline"); }
+    static QString text() { return QStringLiteral("FreezeCut"); }
 };
 
 // The empty editor uses the same viewfinder corners as region selection.
@@ -479,7 +479,7 @@ struct UndoPatch {
 struct EditorWindow::Ui {
     explicit Ui(EditorWindow &window) : window(window)
     {
-        window.setWindowTitle(QStringLiteral("Frameline[*]"));
+        window.setWindowTitle(QStringLiteral("FreezeCut[*]"));
         window.setMinimumSize(720, 500);
         window.resize(1180, 780);
         root = new QWidget(&window);
@@ -638,9 +638,9 @@ struct EditorWindow::Ui {
         stack->addSpacing(22);
 
 #ifdef Q_OS_MACOS
-        const QString tip = QStringLiteral("The shortcuts work in any app while Frameline is in the menu bar.");
+        const QString tip = QStringLiteral("The shortcuts work in any app while FreezeCut is in the menu bar.");
 #else
-        const QString tip = QStringLiteral("The shortcuts work in any app while Frameline is running.");
+        const QString tip = QStringLiteral("The shortcuts work in any app while FreezeCut is running.");
 #endif
         shortcutTip = theme::label(tip, "caption", content);
         shortcutTip->setAlignment(Qt::AlignCenter);

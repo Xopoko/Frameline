@@ -5,7 +5,7 @@
 #include <QString>
 
 // What the clients and servers of the library API agree on. The standalone server in
-// server/frameline_server.py enforces the same rules.
+// server/freezecut_server.py enforces the same rules.
 namespace LibraryProtocol {
 
 inline constexpr qint64 maxImageBytes = 64 * 1024 * 1024;

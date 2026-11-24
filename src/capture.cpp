@@ -96,8 +96,8 @@ void ScreenCapture::capture(bool region, QWidget *portalParent)
         auto *request = new Portal::Request(this);
         const auto message = QStringLiteral("Wayland did not provide a screenshot. Check screen capture permissions in system settings.");
         const auto responseFailure = portalParent
-            ? QStringLiteral("Wayland denied screen capture. Allow Frameline to capture the screen in system settings and try again.")
-            : QStringLiteral("Wayland denied screen capture. On the first run, try again from the active Frameline window.");
+            ? QStringLiteral("Wayland denied screen capture. Allow FreezeCut to capture the screen in system settings and try again.")
+            : QStringLiteral("Wayland denied screen capture. On the first run, try again from the active FreezeCut window.");
         connect(request, &Portal::Request::failed, this, [this, message] { emit failed(message); });
         connect(request, &Portal::Request::responded, this,
                 [this, responseFailure](uint code, const QVariantMap &results) {

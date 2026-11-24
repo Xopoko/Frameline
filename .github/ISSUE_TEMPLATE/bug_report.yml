@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in Frameline doesn't work as described.
+description: Something in FreezeCut doesn't work as described.
 labels: [bug]
 body:
   - type: markdown
@@ -10,7 +10,7 @@ body:
     id: what-happened
     attributes:
       label: What happened
-      description: What you did, what you expected, and what Frameline did instead.
+      description: What you did, what you expected, and what FreezeCut did instead.
       placeholder: I pressed the region shortcut over a full-screen video and the overlay opened on the wrong monitor.
     validations:
       required: true
@@ -27,9 +27,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: Frameline version
-      description: Run `frameline --version`.
-      placeholder: Frameline 0.5.0
+      label: FreezeCut version
+      description: Run `freezecut --version` (or `frameline --version` in older releases).
+      placeholder: 0.5.0
     validations:
       required: true
   - type: dropdown
@@ -63,5 +63,5 @@ body:
     id: logs
     attributes:
       label: Output or screenshots
-      description: Terminal output from running Frameline, or screenshots of the problem with sample content.
+      description: Terminal output from running FreezeCut, or screenshots of the problem with sample content.
       render: text

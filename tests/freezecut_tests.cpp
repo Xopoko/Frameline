@@ -66,7 +66,7 @@ QPushButton *buttonWithText(QWidget &window, const QString &text)
 
 } // namespace
 
-class FramelineTests final : public QObject {
+class FreezeCutTests final : public QObject {
     Q_OBJECT
 
 private slots:
@@ -90,7 +90,7 @@ private slots:
 #endif
 };
 
-void FramelineTests::annotationRendering()
+void FreezeCutTests::annotationRendering()
 {
     QImage source(96, 72, QImage::Format_RGB32);
     for (int y = 0; y < source.height(); ++y) {
@@ -118,7 +118,7 @@ void FramelineTests::annotationRendering()
     QVERIFY2(edited.pixelColor(90, 67) == source.pixelColor(90, 67), "Unmarked pixels must stay intact.");
 }
 
-void FramelineTests::annotationDamage()
+void FreezeCutTests::annotationDamage()
 {
     QImage source(110, 80, QImage::Format_RGB32);
     source.fill(Qt::white);
@@ -143,7 +143,7 @@ void FramelineTests::annotationDamage()
     }
 }
 
-void FramelineTests::pngExport()
+void FreezeCutTests::pngExport()
 {
     const QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -165,7 +165,7 @@ void FramelineTests::pngExport()
              "Exporting a premultiplied image must preserve straight-alpha pixels.");
 }
 
-void FramelineTests::regionSelectionHandsOffBeforeDismiss()
+void FreezeCutTests::regionSelectionHandsOffBeforeDismiss()
 {
     const bool quitOnClose = QApplication::quitOnLastWindowClosed();
     QApplication::setQuitOnLastWindowClosed(false);
@@ -189,7 +189,7 @@ void FramelineTests::regionSelectionHandsOffBeforeDismiss()
         selection->completed = true;
     });
     for (auto *window : QApplication::topLevelWidgets()) {
-        if (window->isVisible() && window->windowTitle() == QStringLiteral("Frameline — Select region")) {
+        if (window->isVisible() && window->windowTitle() == QStringLiteral("FreezeCut — Select region")) {
             selection->overlay = window;
             break;
         }
@@ -218,7 +218,7 @@ void FramelineTests::regionSelectionHandsOffBeforeDismiss()
     QCOMPARE(selection->image.pixelColor(0, 0), QColor(Qt::blue));
 }
 
-void FramelineTests::settingsValidation()
+void FreezeCutTests::settingsValidation()
 {
     const LibrarySettings empty;
     const LibrarySettings valid = validLibrary();
@@ -274,7 +274,7 @@ void FramelineTests::settingsValidation()
              "Turning off automatic archiving must not make a partial setup valid.");
 }
 
-void FramelineTests::settingsDestinationKey()
+void FreezeCutTests::settingsDestinationKey()
 {
     const LibrarySettings original = validLibrary();
     const QString key = original.storageKey();
@@ -302,7 +302,7 @@ void FramelineTests::settingsDestinationKey()
     QVERIFY2(candidate.storageKey() != key, "A local service must use a separate queue from an SSH destination.");
 }
 
-void FramelineTests::settingsRoundTrip()
+void FreezeCutTests::settingsRoundTrip()
 {
     const QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -353,7 +353,7 @@ void FramelineTests::settingsRoundTrip()
     }
 }
 
-void FramelineTests::settingsDialog()
+void FreezeCutTests::settingsDialog()
 {
     SettingsWindow window(AppSettings{});
     window.show();
@@ -399,7 +399,7 @@ void FramelineTests::settingsDialog()
              "Valid SSH settings should save with the selected connection.");
 }
 
-void FramelineTests::standaloneLibrary()
+void FreezeCutTests::standaloneLibrary()
 {
     const QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -436,7 +436,7 @@ void FramelineTests::standaloneLibrary()
     QVERIFY(grid->isVisible());
 }
 
-void FramelineTests::libraryRejectsStaleSettings()
+void FreezeCutTests::libraryRejectsStaleSettings()
 {
     const QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -472,7 +472,7 @@ void FramelineTests::libraryRejectsStaleSettings()
 }
 
 #if !defined(Q_OS_WIN)
-void FramelineTests::settingsMoveFromScreenFrame()
+void FreezeCutTests::settingsMoveFromScreenFrame()
 {
     const QTemporaryDir home;
     QVERIFY(home.isValid());
@@ -491,7 +491,7 @@ void FramelineTests::settingsMoveFromScreenFrame()
     QVERIFY(QDir(legacy).mkpath(QStringLiteral("queues/key")) && QDir(legacy).mkpath(QStringLiteral("library")));
 
     const QString directory = defaultSettingsDirectory();
-    QVERIFY2(directory == root.filePath(QStringLiteral(".frameline")), "Settings must live in the Frameline folder after the move.");
+    QVERIFY2(directory == root.filePath(QStringLiteral(".frameline")), "Settings must live in the existing .frameline profile folder after the move.");
     QVERIFY2(QFileInfo(QDir(directory).filePath(QStringLiteral("queues/key"))).isDir()
                  && QFileInfo(QDir(directory).filePath(QStringLiteral("library"))).isDir() && !QFileInfo::exists(legacy),
              "Moving from ScreenFrame must carry settings, queued uploads and the library along.");
@@ -503,7 +503,7 @@ void FramelineTests::settingsMoveFromScreenFrame()
 #endif
 
 #if defined(Q_OS_WIN)
-void FramelineTests::windowsRegionKey()
+void FreezeCutTests::windowsRegionKey()
 {
     using Decision = WindowsRegionKeyState::Decision;
     WindowsRegionKeyState key;
@@ -522,7 +522,7 @@ void FramelineTests::windowsRegionKey()
              "A key held while starting the hook must finish without interception.");
 }
 #elif defined(Q_OS_LINUX)
-void FramelineTests::captureCopiesImageToClipboard()
+void FreezeCutTests::captureCopiesImageToClipboard()
 {
     if (QApplication::platformName() != QStringLiteral("offscreen") || ScreenCapture::usesScreenshotPortal())
         QSKIP("This test requires the offscreen platform without the Wayland screenshot portal.");
@@ -561,7 +561,7 @@ void FramelineTests::captureCopiesImageToClipboard()
         clipboard->setText(original);
 
         const QString path = home.filePath(enabled ? QStringLiteral("enabled.png") : QStringLiteral("disabled.png"));
-        FramelineApplication application({LaunchOptions::Mode::Full, path});
+        FreezeCutApplication application({LaunchOptions::Mode::Full, path});
         application.start();
         QTRY_VERIFY(QFileInfo::exists(path));
         bool editorVisible = false;
@@ -591,5 +591,5 @@ void FramelineTests::captureCopiesImageToClipboard()
 }
 #endif
 
-QTEST_MAIN(FramelineTests)
-#include "frameline_tests.moc"
+QTEST_MAIN(FreezeCutTests)
+#include "freezecut_tests.moc"

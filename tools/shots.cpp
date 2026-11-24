@@ -1,6 +1,6 @@
-// Developer tool: renders Frameline's windows to PNG files for visual review and records the
+// Developer tool: renders FreezeCut's windows to PNG files for visual review and records the
 // frames of the README demo.
-// Usage: frameline_shots <output-directory> [<library-port> <library-token> | --region | --demo-editor | --demo-region]
+// Usage: freezecut_shots <output-directory> [<library-port> <library-token> | --region | --demo-editor | --demo-region]
 #include "editor.h"
 #include "regionselector.h"
 #include "libraryclient.h"
@@ -517,7 +517,7 @@ void editorDemo(const QString &directory)
     record.hold(editor, 5);
 }
 
-// The overlay needs the offscreen platform, so it renders in a separate run: frameline_shots <dir> --region
+// The overlay needs the offscreen platform, so it renders in a separate run: freezecut_shots <dir> --region
 void regionShots()
 {
     QWidget *overlay = openRegionOverlay(QSize(1600, 1000), QSize(1600, 1000));
@@ -541,7 +541,7 @@ int main(int argc, char **argv)
     QApplication app(argc, argv);
     const QStringList arguments = app.arguments();
     if (arguments.size() < 2) {
-        qWarning("Usage: frameline_shots <output-directory> "
+        qWarning("Usage: freezecut_shots <output-directory> "
                  "[<library-port> <library-token> | --region | --demo-editor | --demo-region]");
         return 1;
     }

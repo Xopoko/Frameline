@@ -67,7 +67,7 @@ void captureMacScreens(ScreenCapture *capture, const QList<QScreen *> &screens)
 {
     if (!CGPreflightScreenCaptureAccess() && !CGRequestScreenCaptureAccess()) {
         emit capture->failed(QStringLiteral(
-            "Allow Frameline in System Settings → Privacy & Security → Screen & System Audio Recording, "
+            "Allow FreezeCut in System Settings → Privacy & Security → Screen & System Audio Recording, "
             "then restart the app."));
         return;
     }
@@ -86,7 +86,7 @@ void captureMacScreens(ScreenCapture *capture, const QList<QScreen *> &screens)
             }
         }
         const auto queue = dispatch_group_create();
-        const auto resultsQueue = dispatch_queue_create("frameline.capture", DISPATCH_QUEUE_SERIAL);
+        const auto resultsQueue = dispatch_queue_create("freezecut.capture", DISPATCH_QUEUE_SERIAL);
         __block QList<CaptureFrame> frames;
         for (const auto &display : displays) {
             for (SCDisplay *source in content.displays) {

@@ -1,10 +1,10 @@
-# Standalone Frameline library server
+# Standalone FreezeCut library server
 
 To share screenshots from the desktop app, use **Settings → Sync across devices → Host here**. This guide covers a separately managed Python server, including running it when the desktop app is closed. Each server keeps its own library files. [Set up the embedded library](../README.md#sync-across-devices)
 
 ## Start a library
 
-On Ubuntu with systemd, run `bash scripts/install-ubuntu-library.sh` from the repository root as your regular user. The service stores screenshots and the access token under `~/.local/state/screenframe-library`. Frameline was called ScreenFrame; the service, its folders and the `X-ScreenFrame-*` headers keep that name so existing libraries keep working. If the server must run while you are signed out, enable user lingering with `loginctl enable-linger "$USER"`.
+On Ubuntu with systemd, run `bash scripts/install-ubuntu-library.sh` from the repository root as your regular user. The service stores screenshots and the access token under `~/.local/state/screenframe-library`. Its service name, folders and `X-ScreenFrame-*` headers let existing libraries and clients keep working. If the server must run while you are signed out, enable user lingering with `loginctl enable-linger "$USER"`.
 
 To run the server directly, use Python 3.10 or newer. On a fresh setup, create a private data directory and generate a token once.
 
@@ -18,7 +18,7 @@ mkdir -p "$library"
 Reuse the token whenever you restart the server.
 
 ```sh
-python3 server/frameline_server.py --data-dir "$library" --token-file "$library/token"
+python3 server/freezecut_server.py --data-dir "$library" --token-file "$library/token"
 ```
 
 The server listens on `127.0.0.1:18745` by default. Use `--port` to change the loopback port. Keep the token file at mode 0600 and the data directory at mode 0700. A token contains 32–256 URL-safe ASCII characters.
@@ -33,7 +33,7 @@ Host screenshots-server
     User library-user
 ```
 
-Verify the host key when you connect for the first time. `ssh -o BatchMode=yes screenshots-server true` should then succeed without a prompt. The SSH server must allow local port forwarding. In Frameline, enter the same host alias, the library port (18745 by default), the token, and a device name. Select **Test connection** before saving. Enable **Upload screenshots from this device** wherever you want automatic uploads.
+Verify the host key when you connect for the first time. `ssh -o BatchMode=yes screenshots-server true` should then succeed without a prompt. The SSH server must allow local port forwarding. In FreezeCut, enter the same host alias, the library port (18745 by default), the token, and a device name. Select **Test connection** before saving. Enable **Upload screenshots from this device** wherever you want automatic uploads.
 
 The shared bearer token grants read and write access to the library. Give it only to devices you trust. Screenshots stay on disk indefinitely. The server has no automatic retention policy or total storage quota.
 

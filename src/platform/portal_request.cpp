@@ -23,7 +23,7 @@ bool isWayland()
 
 QString token()
 {
-    return QStringLiteral("frameline_") + QUuid::createUuid().toString(QUuid::Id128);
+    return QStringLiteral("freezecut_") + QUuid::createUuid().toString(QUuid::Id128);
 }
 
 QDBusConnection connection()

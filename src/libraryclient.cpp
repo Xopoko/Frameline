@@ -39,7 +39,7 @@ namespace {
 using LibraryProtocol::isScreenshotId;
 
 // The remote end of the SSH tunnel prints this line once the forwarded port is ready.
-constexpr auto readyMarker = "frameline-ready";
+constexpr auto readyMarker = "freezecut-ready";
 
 QString responseError(QNetworkReply *reply)
 {
@@ -298,7 +298,7 @@ struct LibraryClient::State : QObject {
             const bool matchesHost = hosted.port == port && hosted.token.toLatin1() == token;
             if ((forHostedLibrary || matchesHost) && (!matchesHost || !hosted.enabled
                 || !LibraryServer::isRunning(hosted.directory)))
-                return QStringLiteral("Open Frameline on the computer that hosts the library.");
+                return QStringLiteral("Open FreezeCut on the computer that hosts the library.");
         }
         return {};
     }
@@ -621,7 +621,7 @@ struct LibraryClient::State : QObject {
     const QString device;
     const QByteArray token;
     const bool autoArchive;
-    // This client was created for the library that Frameline hosts on this computer.
+    // This client was created for the library that FreezeCut hosts on this computer.
     bool forHostedLibrary = false;
     QString hostedHistoryDirectory;
     QFileSystemWatcher historyWatcher;
@@ -680,7 +680,7 @@ void LibraryClient::start()
     if (isConfigured() && d->autoArchive) {
         d->status();
         d->pump();
-        // Other Frameline processes, including GNOME hotkey invocations, share the same queue.
+        // Other FreezeCut processes, including GNOME hotkey invocations, share the same queue.
         auto *poll = new QTimer(d.get());
         poll->setInterval(10000);
         connect(poll, &QTimer::timeout, d.get(), [this] { d->pump(); });

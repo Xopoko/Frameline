@@ -15,7 +15,7 @@ public:
     void start(RegionShortcutPreset preset = RegionShortcutPreset::Standard);
     // The keys of a shortcut as shown to the user. A Wayland desktop may assign other keys.
     QString description(bool region) const;
-    // The keys Frameline asks for, in the platform's notation.
+    // The keys FreezeCut asks for, in the platform's notation.
     static QString defaultKeys(bool region, RegionShortcutPreset preset);
 
 signals:

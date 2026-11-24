@@ -1,5 +1,5 @@
 <RCC>
     <qresource prefix="/">
-        <file alias="frameline.png">Frameline.png</file>
+        <file alias="freezecut.png">FreezeCut.png</file>
     </qresource>
 </RCC>

@@ -40,7 +40,7 @@ QString regionKeys(bool system)
 QString takeoverDetails()
 {
 #if defined(Q_OS_WIN)
-    return QStringLiteral("While Frameline is running, %1 opens region capture in place of Windows Search.").arg(regionKeys(true));
+    return QStringLiteral("While FreezeCut is running, %1 opens region capture in place of Windows Search.").arg(regionKeys(true));
 #elif defined(Q_OS_MACOS)
     return QStringLiteral("First turn off Screenshot and recording options in System Settings → Keyboard → "
                           "Keyboard Shortcuts → Screenshots.");
@@ -203,7 +203,7 @@ struct SettingsWindow::Ui {
     Ui(SettingsWindow &dialog, const AppSettings &settings)
         : dialog(dialog), saved(settings), hostDraft(settings.hostedLibrary)
     {
-        dialog.setWindowTitle(QStringLiteral("Settings — Frameline"));
+        dialog.setWindowTitle(QStringLiteral("Settings — FreezeCut"));
         dialog.setMinimumWidth(540);
         dialog.setObjectName(QStringLiteral("surface"));
         auto *root = new QVBoxLayout(&dialog);
@@ -290,7 +290,7 @@ struct SettingsWindow::Ui {
         column->addWidget(theme::label(QStringLiteral("Startup"), "heading", page));
         column->addSpacing(10);
         auto *group = new Group(page);
-        autostart = new Toggle(QStringLiteral("Start Frameline when I sign in"));
+        autostart = new Toggle(QStringLiteral("Start FreezeCut when I sign in"));
         autostart->setObjectName(QStringLiteral("startOnLogin"));
         QString error;
         autostart->setChecked(Autostart::isEnabled(&error));
@@ -299,7 +299,7 @@ struct SettingsWindow::Ui {
         column->addWidget(group);
         column->addSpacing(7);
         column->addWidget(paragraph(startupEditable
-            ? QStringLiteral("Frameline starts in the system tray, ready to capture and run your library.")
+            ? QStringLiteral("FreezeCut starts in the system tray, ready to capture and run your library.")
             : error, "caption", page));
     }
 
@@ -325,7 +325,7 @@ struct SettingsWindow::Ui {
         group->addWidgetRow(takeover);
         column->addWidget(group);
         column->addSpacing(8);
-        column->addWidget(paragraph(takeoverDetails() + QStringLiteral(" Changes apply after Frameline restarts."), "caption", page));
+        column->addWidget(paragraph(takeoverDetails() + QStringLiteral(" Changes apply after FreezeCut restarts."), "caption", page));
         QObject::connect(takeover, &QAbstractButton::toggled, &dialog,
                          [this](bool checked) { regionCap->setKeys(regionKeys(checked)); });
     }
@@ -334,7 +334,7 @@ struct SettingsWindow::Ui {
     {
         column->addWidget(theme::label(QStringLiteral("Sync across devices"), "heading", page));
         column->addSpacing(4);
-        column->addWidget(paragraph(QStringLiteral("Frameline saves screenshots on this device automatically."),
+        column->addWidget(paragraph(QStringLiteral("FreezeCut saves screenshots on this device automatically."),
                                     "muted", page));
         column->addSpacing(14);
         connection = new Segmented({QStringLiteral("Local only"), QStringLiteral("Host here"),
@@ -414,7 +414,7 @@ struct SettingsWindow::Ui {
         auto *column = new QVBoxLayout(hostDetails);
         column->setContentsMargins(0, 0, 0, 12);
         column->setSpacing(8);
-        column->addWidget(paragraph(QStringLiteral("Keep Frameline running here so connected devices can browse the shared library."),
+        column->addWidget(paragraph(QStringLiteral("Keep FreezeCut running here so connected devices can browse the shared library."),
                                     "caption", hostDetails));
         hostStatus = new StatusLine(hostDetails);
         column->addWidget(hostStatus);
@@ -478,7 +478,7 @@ struct SettingsWindow::Ui {
             if (invite.isEmpty())
                 return;
             QGuiApplication::clipboard()->setText(invite);
-            setStatus(QStringLiteral("Code copied. Paste it into Frameline on a device you trust."),
+            setStatus(QStringLiteral("Code copied. Paste it into FreezeCut on a device you trust."),
                       StatusLine::Success);
         });
         return tailscaleDetails;
