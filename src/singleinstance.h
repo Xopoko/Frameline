@@ -12,7 +12,7 @@ class SingleInstance final : public QObject {
     Q_OBJECT
 
 public:
-    enum class Request { Editor, Library, Settings, Quiet };
+    enum class Request { Editor, Library, Settings, Quiet, Welcome };
     Q_ENUM(Request)
 
     enum class Result { Primary, Forwarded, Failed };

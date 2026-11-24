@@ -160,7 +160,7 @@ void FreezeCutApplication::connectLibraryClient()
 bool FreezeCutApplication::isDesktop() const
 {
     return options_.mode == LaunchOptions::Mode::Desktop || options_.mode == LaunchOptions::Mode::Library
-        || options_.mode == LaunchOptions::Mode::Settings;
+        || options_.mode == LaunchOptions::Mode::Settings || options_.mode == LaunchOptions::Mode::Welcome;
 }
 
 void FreezeCutApplication::start()
@@ -200,9 +200,10 @@ void FreezeCutApplication::start()
         trayMenu_->addAction(QStringLiteral("Capture Region"), this, [this] { beginCapture(true, true); });
         trayMenu_->addAction(QStringLiteral("Capture Screen"), this, [this] { beginCapture(false, true); });
         trayMenu_->addSeparator();
-        trayMenu_->addAction(QStringLiteral("Open FreezeCut"), this, &FreezeCutApplication::openDesktop);
+        trayMenu_->addAction(QStringLiteral("Open FreezeCut"), this, [this] { openDesktop(); });
         trayMenu_->addAction(QStringLiteral("Library"), this, &FreezeCutApplication::showLibrary);
         trayMenu_->addAction(QStringLiteral("Settings…"), this, &FreezeCutApplication::showSettings);
+        trayMenu_->addAction(QStringLiteral("Welcome Guide…"), this, [this] { openDesktop(true); });
 #if defined(FREEZECUT_MAC_APP_STORE) || defined(FREEZECUT_WINDOWS_STORE) || defined(FREEZECUT_LINUX_SNAP)
         trayMenu_->addAction(QStringLiteral("Privacy Policy"), this, [] {
             QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/Xopoko/FreezeCut/blob/main/PRIVACY.md")));
@@ -254,7 +255,8 @@ void FreezeCutApplication::start()
         tray_.show();
     }
 
-    if (options_.trayOnly || options_.mode != LaunchOptions::Mode::Desktop)
+    if (options_.trayOnly || options_.mode == LaunchOptions::Mode::Library
+        || options_.mode == LaunchOptions::Mode::Settings)
         startShortcuts();
     if (options_.mode == LaunchOptions::Mode::Settings) {
         showSettings();
@@ -263,7 +265,7 @@ void FreezeCutApplication::start()
     } else if (options_.mode == LaunchOptions::Mode::Library) {
         showLibrary();
     } else if (!options_.trayOnly) {
-        openDesktop();
+        openDesktop(options_.mode == LaunchOptions::Mode::Welcome);
     } else if (!tray_.isVisible()) {
         showEditor();
     }
@@ -278,7 +280,7 @@ void FreezeCutApplication::activate(LaunchOptions::Mode mode)
     } else if (mode == LaunchOptions::Mode::Library) {
         showLibrary();
     } else {
-        openDesktop();
+        openDesktop(mode == LaunchOptions::Mode::Welcome);
     }
 }
 
@@ -329,7 +331,7 @@ EditorWindow &FreezeCutApplication::editor()
     return *editor_;
 }
 
-void FreezeCutApplication::openDesktop()
+void FreezeCutApplication::openDesktop(bool replayWelcome)
 {
     if (busy_ || quitting_)
         return;
@@ -341,7 +343,7 @@ void FreezeCutApplication::openDesktop()
         bringToFront(*welcome_);
         return;
     }
-    if (welcomeHandled_ || welcomeCompleted(settingsDirectory_)) {
+    if (!replayWelcome && (welcomeHandled_ || welcomeCompleted(settingsDirectory_))) {
         welcomeHandled_ = true;
         showEditor();
         return;

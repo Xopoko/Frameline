@@ -85,11 +85,12 @@ QString endpointName(const QString &directory)
 }
 
 // The byte a launching process sends to the running one for each request.
-constexpr std::array<std::pair<SingleInstance::Request, char>, 4> requestCodes{{
+constexpr std::array<std::pair<SingleInstance::Request, char>, 5> requestCodes{{
     {SingleInstance::Request::Editor, 'E'},
     {SingleInstance::Request::Library, 'L'},
     {SingleInstance::Request::Settings, 'S'},
     {SingleInstance::Request::Quiet, 'Q'},
+    {SingleInstance::Request::Welcome, 'W'},
 }};
 
 char encodeRequest(SingleInstance::Request request)

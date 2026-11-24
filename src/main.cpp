@@ -58,11 +58,13 @@ int main(int argc, char **argv)
         "freezecut [--tray]\n"
         "freezecut library\n"
         "freezecut settings\n"
+        "freezecut welcome\n"
         "freezecut capture full|region [--output <file.png>] [--no-preview]"));
     const auto help = parser.addHelpOption();
     const auto version = parser.addVersionOption();
-    parser.addPositionalArgument(QStringLiteral("command"), QStringLiteral("Open the library, settings or capture the screen."),
-                                 QStringLiteral("[library | settings | capture full | capture region]"));
+    parser.addPositionalArgument(QStringLiteral("command"),
+                                 QStringLiteral("Open the library, settings, welcome guide or capture the screen."),
+                                 QStringLiteral("[library | settings | welcome | capture full | capture region]"));
     const QCommandLineOption tray(QStringLiteral("tray"), QStringLiteral("Start in the system tray."));
     const QCommandLineOption output({QStringLiteral("o"), QStringLiteral("output")},
                                    QStringLiteral("Save the capture as a PNG."), QStringLiteral("file.png"));
@@ -88,9 +90,11 @@ int main(int argc, char **argv)
         options.mode = LaunchOptions::Mode::Library;
     } else if (positional == QStringList{QStringLiteral("settings")}) {
         options.mode = LaunchOptions::Mode::Settings;
+    } else if (positional == QStringList{QStringLiteral("welcome")}) {
+        options.mode = LaunchOptions::Mode::Welcome;
     } else if (!positional.isEmpty()) {
         if (positional.size() != 2 || positional[0] != QStringLiteral("capture")) {
-            return argumentError(QStringLiteral("Expected 'library', 'settings', 'capture full' or 'capture region'."));
+            return argumentError(QStringLiteral("Expected 'library', 'settings', 'welcome', 'capture full' or 'capture region'."));
         }
         if (positional[1] == QStringLiteral("full")) {
             options.mode = LaunchOptions::Mode::Full;
@@ -140,6 +144,7 @@ int main(int argc, char **argv)
         const auto request = options.trayOnly ? SingleInstance::Request::Quiet
             : options.mode == LaunchOptions::Mode::Library ? SingleInstance::Request::Library
             : options.mode == LaunchOptions::Mode::Settings ? SingleInstance::Request::Settings
+            : options.mode == LaunchOptions::Mode::Welcome ? SingleInstance::Request::Welcome
             : SingleInstance::Request::Editor;
         instance = std::make_unique<SingleInstance>();
         QString error;
@@ -162,6 +167,7 @@ int main(int argc, char **argv)
             case SingleInstance::Request::Editor: controller.activate(LaunchOptions::Mode::Desktop); break;
             case SingleInstance::Request::Library: controller.activate(LaunchOptions::Mode::Library); break;
             case SingleInstance::Request::Settings: controller.activate(LaunchOptions::Mode::Settings); break;
+            case SingleInstance::Request::Welcome: controller.activate(LaunchOptions::Mode::Welcome); break;
             case SingleInstance::Request::Quiet: break;
             }
         });

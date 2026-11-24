@@ -27,7 +27,8 @@ void SingleInstanceTests::forwardsOnlyVisibleLaunches()
     QSignalSpy requested(&primary, &SingleInstance::activationRequested);
 
     for (const auto request : {SingleInstance::Request::Quiet, SingleInstance::Request::Editor,
-                               SingleInstance::Request::Library, SingleInstance::Request::Settings}) {
+                               SingleInstance::Request::Library, SingleInstance::Request::Settings,
+                               SingleInstance::Request::Welcome}) {
         auto forwarded = std::async(std::launch::async, [path = directory.path(), request] {
             SingleInstance secondary(path);
             return secondary.start(request);
@@ -38,10 +39,11 @@ void SingleInstanceTests::forwardsOnlyVisibleLaunches()
         QCOMPARE(forwarded.get(), SingleInstance::Result::Forwarded);
     }
 
-    QTRY_COMPARE(requested.size(), 3);
+    QTRY_COMPARE(requested.size(), 4);
     QCOMPARE(requested.at(0).at(0).value<SingleInstance::Request>(), SingleInstance::Request::Editor);
     QCOMPARE(requested.at(1).at(0).value<SingleInstance::Request>(), SingleInstance::Request::Library);
     QCOMPARE(requested.at(2).at(0).value<SingleInstance::Request>(), SingleInstance::Request::Settings);
+    QCOMPARE(requested.at(3).at(0).value<SingleInstance::Request>(), SingleInstance::Request::Welcome);
 }
 
 void SingleInstanceTests::acknowledgesSettingsWhileDialogIsOpen()

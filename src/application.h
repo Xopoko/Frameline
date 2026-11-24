@@ -20,7 +20,7 @@ class TailscaleMonitor;
 class WelcomeWindow;
 
 struct LaunchOptions {
-    enum class Mode { Desktop, Library, Full, Region, Settings };
+    enum class Mode { Desktop, Library, Full, Region, Settings, Welcome };
 
     Mode mode = Mode::Desktop;
     QString output;
@@ -37,7 +37,7 @@ public:
 
 private:
     EditorWindow &editor();
-    void openDesktop();
+    void openDesktop(bool replayWelcome = false);
     void dismissWelcome();
     void startShortcuts();
     void showEditor();
