@@ -90,16 +90,20 @@ add_library(freezecut_core STATIC
     src/tailrelay.h
     src/platform/autostart.cpp
     src/platform/autostart.h
+    src/platform/reducedmotion.h
     src/shortcuts.cpp
     src/shortcuts.h
     src/theme.cpp
     src/theme.h
+    src/welcomewindow.cpp
+    src/welcomewindow.h
 )
 target_include_directories(freezecut_core PUBLIC src)
 target_link_libraries(freezecut_core PUBLIC Qt6::Widgets PRIVATE Qt6::Network Qt6::Concurrent)
 
 if(WIN32)
-    target_sources(freezecut_core PRIVATE src/platform/windows_shortcuts.cpp src/platform/windows_shortcuts.h)
+    target_sources(freezecut_core PRIVATE
+        src/platform/reducedmotion.cpp src/platform/windows_shortcuts.cpp src/platform/windows_shortcuts.h)
     target_link_libraries(freezecut_core PRIVATE user32 shell32 gdi32 dwmapi ws2_32 iphlpapi)
     if(FREEZECUT_WINDOWS_STORE)
         set(FREEZECUT_WINDOWS_STORE_BUILD_NUMBER "" CACHE STRING "Microsoft Store build number for source distribution")
@@ -114,15 +118,17 @@ if(WIN32)
 elseif(APPLE)
     enable_language(OBJCXX)
     set_target_properties(freezecut_core PROPERTIES OBJCXX_STANDARD 20 OBJCXX_STANDARD_REQUIRED ON)
-    target_sources(freezecut_core PRIVATE src/platform/macos_capture.mm)
-    set_source_files_properties(src/platform/macos_capture.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+    target_sources(freezecut_core PRIVATE src/platform/macos_capture.mm src/platform/macos_reducedmotion.mm)
+    set_source_files_properties(src/platform/macos_capture.mm src/platform/macos_reducedmotion.mm
+        PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+    find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
     find_library(CARBON_FRAMEWORK Carbon REQUIRED)
     find_library(APPLICATION_SERVICES_FRAMEWORK ApplicationServices REQUIRED)
     find_library(SCREEN_CAPTURE_KIT_FRAMEWORK ScreenCaptureKit REQUIRED)
     find_library(CORE_GRAPHICS_FRAMEWORK CoreGraphics REQUIRED)
     target_link_libraries(freezecut_core PRIVATE
         ${CARBON_FRAMEWORK} ${APPLICATION_SERVICES_FRAMEWORK} ${SCREEN_CAPTURE_KIT_FRAMEWORK}
-        ${CORE_GRAPHICS_FRAMEWORK} objc)
+        ${CORE_GRAPHICS_FRAMEWORK} ${APPKIT_FRAMEWORK} objc)
     if(FREEZECUT_MAC_APP_STORE)
         find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
         find_library(SERVICE_MANAGEMENT_FRAMEWORK ServiceManagement REQUIRED)
@@ -136,7 +142,8 @@ elseif(APPLE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(Qt6 6.4 REQUIRED COMPONENTS DBus)
     find_package(X11 REQUIRED COMPONENTS xcb)
-    target_sources(freezecut_core PRIVATE src/platform/portal_request.cpp src/platform/portal_request.h)
+    target_sources(freezecut_core PRIVATE
+        src/platform/reducedmotion.cpp src/platform/portal_request.cpp src/platform/portal_request.h)
     target_link_libraries(freezecut_core PRIVATE Qt6::DBus X11::xcb)
 else()
     message(FATAL_ERROR "FreezeCut supports Windows, macOS and Linux.")
@@ -249,7 +256,7 @@ if(BUILD_TESTING)
     add_executable(freezecut_tests tests/freezecut_tests.cpp)
     target_link_libraries(freezecut_tests PRIVATE freezecut_core Qt6::Test)
     # Renders every window to PNG for visual review: freezecut_shots <output-directory>
-    add_executable(freezecut_shots tools/shots.cpp)
+    add_executable(freezecut_shots tools/shots.cpp resources/resources.qrc)
     target_link_libraries(freezecut_shots PRIVATE freezecut_core Qt6::Test)
     add_test(NAME freezecut_components COMMAND freezecut_tests)
     set_tests_properties(freezecut_components PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

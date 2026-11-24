@@ -46,6 +46,8 @@ struct AppSettings {
 };
 
 QString defaultSettingsDirectory();
+bool welcomeCompleted(const QString &directory);
+bool markWelcomeCompleted(const QString &directory);
 QString defaultHostedLibraryDirectory(const QString &settingsDirectory = defaultSettingsDirectory());
 QString defaultLibraryDeviceName();
 QString generateLibraryToken();

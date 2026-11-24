@@ -6,6 +6,7 @@
 #include "regionselector.h"
 #include "settings.h"
 #include "settingswindow.h"
+#include "welcomewindow.h"
 
 #include <QDir>
 #include <QFile>
@@ -20,6 +21,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScopeGuard>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimeZone>
@@ -77,6 +79,8 @@ private slots:
     void settingsValidation();
     void settingsDestinationKey();
     void settingsRoundTrip();
+    void welcomeUsesLocalProfile();
+    void welcomeNavigation();
 #ifndef FREEZECUT_WINDOWS_STORE
     void settingsDialog();
 #endif
@@ -91,6 +95,66 @@ private slots:
     void captureCopiesImageToClipboard();
 #endif
 };
+
+void FreezeCutTests::welcomeUsesLocalProfile()
+{
+    QTemporaryDir temporary;
+    QVERIFY(temporary.isValid());
+    const QDir root(temporary.path());
+    const QDir fresh(root.filePath(QStringLiteral("fresh")));
+    QVERIFY(QDir().mkpath(fresh.filePath(QStringLiteral("history"))));
+    QVERIFY(QDir().mkpath(fresh.filePath(QStringLiteral("library"))));
+    QVERIFY(!welcomeCompleted(fresh.path()));
+    QVERIFY(markWelcomeCompleted(fresh.path()));
+    QVERIFY(welcomeCompleted(fresh.path()));
+    QVERIFY(!QFileInfo::exists(fresh.filePath(QStringLiteral("settings.json"))));
+
+    const QDir configured(root.filePath(QStringLiteral("configured")));
+    QVERIFY(QDir().mkpath(configured.path()));
+    QFile settings(configured.filePath(QStringLiteral("settings.json")));
+    QVERIFY(settings.open(QIODevice::WriteOnly));
+    QCOMPARE(settings.write("unreadable", 10), qint64(10));
+    settings.close();
+    QVERIFY(welcomeCompleted(configured.path()));
+
+    const QString historyDirectory = root.filePath(QStringLiteral("existing"));
+    LibraryClient history(historyDirectory, {});
+    QVERIFY(!welcomeCompleted(historyDirectory));
+    QImage image(2, 2, QImage::Format_RGB32);
+    image.fill(Qt::black);
+    QVERIFY(!history.enqueue(image, QStringLiteral("region"), QDateTime::currentDateTimeUtc()).isEmpty());
+    QVERIFY(history.flushPendingWrites());
+    QVERIFY(welcomeCompleted(historyDirectory));
+}
+
+void FreezeCutTests::welcomeNavigation()
+{
+    WelcomeWindow welcome;
+    welcome.show();
+    QSignalSpy finished(&welcome, &QDialog::finished);
+    auto *next = buttonWithText(welcome, QStringLiteral("Continue"));
+    auto *back = buttonWithText(welcome, QStringLiteral("Back"));
+    auto *open = buttonWithText(welcome, QStringLiteral("Open FreezeCut"));
+    QVERIFY(next && back && open);
+    QVERIFY(!back->isVisible());
+
+    next->click();
+    QCOMPARE(next->text(), QStringLiteral("Try a capture"));
+    QVERIFY(back->isVisible());
+    back->click();
+    QCOMPARE(next->text(), QStringLiteral("Continue"));
+    QVERIFY(finished.isEmpty());
+
+    next->click();
+    next->click();
+    QCOMPARE(welcome.result(), int(WelcomeWindow::TryCapture));
+    QCOMPARE(finished.count(), 1);
+
+    welcome.show();
+    open->click();
+    QCOMPARE(welcome.result(), int(WelcomeWindow::OpenApp));
+    QCOMPARE(finished.count(), 2);
+}
 
 void FreezeCutTests::annotationRendering()
 {

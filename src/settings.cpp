@@ -11,6 +11,7 @@
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -223,6 +224,40 @@ QString defaultSettingsDirectory()
     }
     return current;
 #endif
+}
+
+bool welcomeCompleted(const QString &directory)
+{
+    const QDir profile(directory);
+    if (QFileInfo(profile.filePath(QStringLiteral("welcome-complete"))).isFile()
+        || QFileInfo::exists(profile.filePath(QStringLiteral("settings.json")))) {
+        return true;
+    }
+
+    QStringList histories{profile.filePath(QStringLiteral("history")), defaultHostedLibraryDirectory(directory)};
+    if (profile.dirName() == QStringLiteral(".frameline"))
+        histories.append(profile.filePath(QStringLiteral("../.screenframe/library")));
+    for (const auto &history : histories) {
+        QDirIterator entries(history, QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks);
+        while (entries.hasNext()) {
+            const QDir capture(entries.next());
+            if (!LibraryProtocol::isScreenshotId(capture.dirName()))
+                continue;
+            const QFileInfo image(capture.filePath(QStringLiteral("image.png")));
+            const QFileInfo metadata(capture.filePath(QStringLiteral("metadata.json")));
+            if (image.isFile() && image.size() > 0 && metadata.isFile() && metadata.size() > 0)
+                return true;
+        }
+    }
+    return false;
+}
+
+bool markWelcomeCompleted(const QString &directory)
+{
+    if (!QDir().mkpath(directory))
+        return false;
+    QSaveFile marker(QDir(directory).filePath(QStringLiteral("welcome-complete")));
+    return marker.open(QIODevice::WriteOnly) && marker.write("1\n", 2) == 2 && marker.commit();
 }
 
 QString defaultHostedLibraryDirectory(const QString &settingsDirectory)

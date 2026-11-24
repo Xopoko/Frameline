@@ -9,6 +9,7 @@
 #include "singleinstance.h"
 #include "tailscale.h"
 #include "platform/autostart.h"
+#include "welcomewindow.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -89,11 +90,10 @@ void copyScreenshotToClipboard(const QImage &image)
 } // namespace
 
 FreezeCutApplication::FreezeCutApplication(LaunchOptions options)
-    : options_(std::move(options))
+    : options_(std::move(options)), settingsDirectory_(defaultSettingsDirectory())
 {
-    const QString directory = defaultSettingsDirectory();
-    settings_ = loadDesktopSettings(directory, &settingsError_);
-    history_ = std::make_unique<LibraryClient>(directory, settings_.hostedLibrary.directory);
+    settings_ = loadDesktopSettings(settingsDirectory_, &settingsError_);
+    history_ = std::make_unique<LibraryClient>(settingsDirectory_, settings_.hostedLibrary.directory);
     libraryServer_ = std::make_unique<LibraryServer>();
     tailscale_ = std::make_unique<TailscaleMonitor>();
     libraryServer_->setPeerAuthorizer([this](const QString &local, const QString &peer) {
@@ -104,7 +104,7 @@ FreezeCutApplication::FreezeCutApplication(LaunchOptions options)
             settingsWindow_->setTailscaleStatus(status);
     });
     connect(tailscale_.get(), &TailscaleMonitor::refreshed, this, [this] { refreshHostedSharing(); });
-    libraryClient_ = std::make_unique<LibraryClient>(settings_.library, directory);
+    libraryClient_ = std::make_unique<LibraryClient>(settings_.library, settingsDirectory_);
     connectLibraryClient();
     connect(history_.get(), &LibraryClient::syncStatusChanged, this, [this](int, const QString &error) {
         if (historyError_ != error) {
@@ -118,7 +118,7 @@ FreezeCutApplication::FreezeCutApplication(LaunchOptions options)
     });
     connect(qApp, &QApplication::lastWindowClosed, this, [this] {
         QTimer::singleShot(0, this, [this] {
-            if (!tray_.isVisible() && !busy_ && !settingsWindow_
+            if (!tray_.isVisible() && !busy_ && !settingsWindow_ && !welcome_
                 && (!editor_ || !editor_->isVisible()) && (!library_ || !library_->isVisible())
                 && (isDesktop() || previewOpened_))
                 exitAfterLibrarySync();
@@ -200,7 +200,7 @@ void FreezeCutApplication::start()
         trayMenu_->addAction(QStringLiteral("Capture Region"), this, [this] { beginCapture(true, true); });
         trayMenu_->addAction(QStringLiteral("Capture Screen"), this, [this] { beginCapture(false, true); });
         trayMenu_->addSeparator();
-        trayMenu_->addAction(QStringLiteral("Open FreezeCut"), this, &FreezeCutApplication::showEditor);
+        trayMenu_->addAction(QStringLiteral("Open FreezeCut"), this, &FreezeCutApplication::openDesktop);
         trayMenu_->addAction(QStringLiteral("Library"), this, &FreezeCutApplication::showLibrary);
         trayMenu_->addAction(QStringLiteral("Settings…"), this, &FreezeCutApplication::showSettings);
 #if defined(FREEZECUT_MAC_APP_STORE) || defined(FREEZECUT_WINDOWS_STORE) || defined(FREEZECUT_LINUX_SNAP)
@@ -248,20 +248,23 @@ void FreezeCutApplication::start()
         tray_.setContextMenu(trayMenu_.get());
         connect(&tray_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
             if (reason == QSystemTrayIcon::Trigger) {
-                showEditor();
+                openDesktop();
             }
         });
         tray_.show();
     }
 
-    shortcuts_.start(settings_.useSystemRegionShortcut ? RegionShortcutPreset::System : RegionShortcutPreset::Standard);
+    if (options_.trayOnly || options_.mode != LaunchOptions::Mode::Desktop)
+        startShortcuts();
     if (options_.mode == LaunchOptions::Mode::Settings) {
         showSettings();
         if (!tray_.isVisible())
             showEditor();
     } else if (options_.mode == LaunchOptions::Mode::Library) {
         showLibrary();
-    } else if (!options_.trayOnly || !tray_.isVisible()) {
+    } else if (!options_.trayOnly) {
+        openDesktop();
+    } else if (!tray_.isVisible()) {
         showEditor();
     }
 }
@@ -275,7 +278,7 @@ void FreezeCutApplication::activate(LaunchOptions::Mode mode)
     } else if (mode == LaunchOptions::Mode::Library) {
         showLibrary();
     } else {
-        showEditor();
+        openDesktop();
     }
 }
 
@@ -326,12 +329,63 @@ EditorWindow &FreezeCutApplication::editor()
     return *editor_;
 }
 
+void FreezeCutApplication::openDesktop()
+{
+    if (busy_ || quitting_)
+        return;
+    if (settingsWindow_) {
+        bringToFront(*settingsWindow_);
+        return;
+    }
+    if (welcome_) {
+        bringToFront(*welcome_);
+        return;
+    }
+    if (welcomeHandled_ || welcomeCompleted(settingsDirectory_)) {
+        welcomeHandled_ = true;
+        showEditor();
+        return;
+    }
+    welcome_ = std::make_unique<WelcomeWindow>();
+    connect(welcome_.get(), &QDialog::finished, this, [this](int result) {
+        if (result == WelcomeWindow::OpenApp || result == WelcomeWindow::TryCapture)
+            markWelcomeCompleted(settingsDirectory_);
+        if (result == WelcomeWindow::TryCapture) {
+            beginCapture(true);
+        } else {
+            dismissWelcome();
+            showEditor();
+        }
+    });
+    bringToFront(*welcome_);
+}
+
+void FreezeCutApplication::dismissWelcome()
+{
+    if (!welcome_)
+        return;
+    welcomeHandled_ = true;
+    auto *window = welcome_.release();
+    window->disconnect(this);
+    window->hide();
+    window->deleteLater();
+}
+
+void FreezeCutApplication::startShortcuts()
+{
+    if (std::exchange(shortcutsStarted_, true))
+        return;
+    shortcuts_.start(settings_.useSystemRegionShortcut ? RegionShortcutPreset::System : RegionShortcutPreset::Standard);
+}
+
 void FreezeCutApplication::showEditor()
 {
     if (busy_ || quitting_) {
         return;
     }
     bringToFront(editor());
+    if (isDesktop())
+        startShortcuts();
 }
 
 void FreezeCutApplication::showLibrary()
@@ -339,6 +393,7 @@ void FreezeCutApplication::showLibrary()
     if (busy_ || quitting_) {
         return;
     }
+    dismissWelcome();
     if (!library_) {
         library_ = std::make_unique<LibraryWindow>(*history_, nullptr,
                                                   libraryClient_->isConfigured() ? libraryClient_.get() : nullptr);
@@ -346,6 +401,7 @@ void FreezeCutApplication::showLibrary()
                 Qt::QueuedConnection);
     }
     bringToFront(*library_);
+    startShortcuts();
 }
 
 void FreezeCutApplication::showSettings()
@@ -371,6 +427,7 @@ void FreezeCutApplication::showSettings()
         return;
     }
 
+    dismissWelcome();
     QString settingsError;
     const AppSettings saved = loadDesktopSettings(defaultSettingsDirectory(), &settingsError);
     settingsWindow_ = std::make_unique<SettingsWindow>(saved);
@@ -393,6 +450,7 @@ void FreezeCutApplication::showSettings()
     settingsWindow_->exec();
     settingsWindow_.reset();
     testClient_.reset();
+    startShortcuts();
     if (std::exchange(restoreLibraryAfterSettings_, false))
         showLibrary();
 }
@@ -508,6 +566,7 @@ void FreezeCutApplication::quitDesktop()
         exitAfterCapture_ = true;
         return;
     }
+    dismissWelcome();
     if (editor_ && editor_->hasUnsavedChanges()) {
         showEditor();
         if (!editor_->confirmReplace()) {
@@ -525,6 +584,8 @@ void FreezeCutApplication::beginCapture(bool region, bool fromTrayMenu)
     }
 
     busy_ = true;
+    const bool leavingWelcome = bool(welcome_);
+    dismissWelcome();
     region_ = region;
     portalAuthorizationAttempted_ = false;
 #ifdef FREEZECUT_LINUX_SNAP
@@ -532,7 +593,7 @@ void FreezeCutApplication::beginCapture(bool region, bool fromTrayMenu)
     interactivePortalCapture_ = ScreenCapture::usesScreenshotPortal()
         && qEnvironmentVariable("XDG_CURRENT_DESKTOP").split(u':').contains(QStringLiteral("GNOME"), Qt::CaseInsensitive);
 #endif
-    restoreEditor_ = editor_ && editor_->isVisible();
+    restoreEditor_ = leavingWelcome || (editor_ && editor_->isVisible());
     restoreLibrary_ = library_ && library_->isVisible() && !library_->isMinimized();
     if (editor_ && editor_->hasUnsavedChanges()) {
         bringToFront(*editor_);
@@ -545,7 +606,7 @@ void FreezeCutApplication::beginCapture(bool region, bool fromTrayMenu)
         }
     }
 
-    const bool surfaceWasVisible = fromTrayMenu || (trayMenu_ && trayMenu_->isVisible())
+    const bool surfaceWasVisible = leavingWelcome || fromTrayMenu || (trayMenu_ && trayMenu_->isVisible())
         || restoreLibrary_ || (editor_ && editor_->isVisible() && !editor_->isMinimized());
     if (editor_) {
         editor_->hide();

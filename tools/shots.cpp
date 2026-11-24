@@ -1,6 +1,6 @@
 // Developer tool: renders FreezeCut's windows to PNG files for visual review and records the
 // frames of the README demo.
-// Usage: freezecut_shots <output-directory> [<library-port> <library-token> | --region | --demo-editor | --demo-region]
+// Usage: freezecut_shots <output-directory> [<library-port> <library-token> | --demo-welcome | --region | --demo-editor | --demo-region]
 #include "editor.h"
 #include "regionselector.h"
 #include "libraryclient.h"
@@ -9,11 +9,13 @@
 #include "settingswindow.h"
 #include "controls.h"
 #include "tailscale.h"
+#include "welcomewindow.h"
 
 #include <QAbstractButton>
 #include <QApplication>
 #include <QDir>
 #include <QEasingCurve>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QLineEdit>
 #include <QListView>
@@ -396,6 +398,25 @@ private:
     QFile log;
 };
 
+void welcomeDemo(const QString &directory)
+{
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/freezecut.png")));
+    WelcomeWindow window;
+    window.setAttribute(Qt::WA_DontShowOnScreen);
+    window.show();
+    Recorder record(directory, 0);
+    for (int step = 0; step < 2; ++step) {
+        QElapsedTimer elapsed;
+        elapsed.start();
+        for (int frame = 0; frame < 42; ++frame) {
+            record.frame(window);
+            settle(int(qMax(qint64(0), (frame + 1) * 33 - elapsed.elapsed())));
+        }
+        if (step == 0)
+            click(window, QStringLiteral("Continue"));
+    }
+}
+
 QPoint centerOf(QWidget &window, QWidget *widget)
 {
     return widget ? widget->mapTo(&window, widget->rect().center()) : QPoint();
@@ -542,7 +563,7 @@ int main(int argc, char **argv)
     const QStringList arguments = app.arguments();
     if (arguments.size() < 2) {
         qWarning("Usage: freezecut_shots <output-directory> "
-                 "[<library-port> <library-token> | --region | --demo-editor | --demo-region]");
+                 "[<library-port> <library-token> | --demo-welcome | --region | --demo-editor | --demo-region]");
         return 1;
     }
     outputDirectory = arguments.at(1);
@@ -553,6 +574,8 @@ int main(int argc, char **argv)
         regionDemo(outputDirectory);
     } else if (arguments.value(2) == QStringLiteral("--demo-editor")) {
         editorDemo(outputDirectory);
+    } else if (arguments.value(2) == QStringLiteral("--demo-welcome")) {
+        welcomeDemo(outputDirectory);
     } else {
         editorShots();
         settingsShots();

@@ -17,6 +17,7 @@ class LibraryWindow;
 class SettingsWindow;
 class LibraryServer;
 class TailscaleMonitor;
+class WelcomeWindow;
 
 struct LaunchOptions {
     enum class Mode { Desktop, Library, Full, Region, Settings };
@@ -36,6 +37,9 @@ public:
 
 private:
     EditorWindow &editor();
+    void openDesktop();
+    void dismissWelcome();
+    void startShortcuts();
     void showEditor();
     void showLibrary();
     void showSettings();
@@ -64,12 +68,14 @@ private:
     };
 
     LaunchOptions options_;
+    QString settingsDirectory_;
     AppSettings settings_;
     QString settingsError_;
     ScreenCapture capture_;
     GlobalShortcuts shortcuts_;
     std::unique_ptr<LibraryClient> history_;
     std::unique_ptr<LibraryClient> libraryClient_;
+    std::unique_ptr<WelcomeWindow> welcome_;
     std::unique_ptr<EditorWindow> editor_;
     std::unique_ptr<LibraryWindow> library_;
     std::unique_ptr<SettingsWindow> settingsWindow_;
@@ -88,6 +94,8 @@ private:
     QString hostedSharingError_;
     PreviewCapture previewCapture_;
     int exitCode_ = 0;
+    bool welcomeHandled_ = false;
+    bool shortcutsStarted_ = false;
     bool busy_ = false;
     bool region_ = false;
     bool restoreEditor_ = false;
