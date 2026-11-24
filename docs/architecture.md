@@ -22,7 +22,17 @@ Everything except `main.cpp` is built into the `freezecut_core` static library, 
 | `controls` | Self-painted controls used by every window: buttons, toggle, segmented control, floating islands, toasts, banners and empty states. |
 | `pngexport` | PNG writing and the save dialog. |
 
-`tools/shots.cpp` builds `freezecut_shots`, which renders every window and state to PNG for visual review: `freezecut_shots <dir> [port token]` (pass a running library's port and token to include the grid and viewer), and `QT_QPA_PLATFORM=offscreen freezecut_shots <dir> --region` for the selection overlay. The README demo is recorded with `--demo-editor` and, offscreen, `--demo-region`; each run writes numbered frames and a `frames.txt` with the pointer position per frame, for compositing into `docs/media/demo.gif`. `FREEZECUT_THEME=light` or `dark` overrides the system appearance.
+`tools/shots.cpp` builds `freezecut_shots`, which renders each window and state to a PNG for visual review. Run `freezecut_shots <dir> [port token]` and pass a running library's port and token to include the grid and viewer. For the selection overlay, run `QT_QPA_PLATFORM=offscreen freezecut_shots <dir> --region`. `FREEZECUT_THEME=light` or `dark` overrides the system appearance.
+
+Record the README demo with `freezecut_shots <editor-dir> --demo-editor` and `QT_QPA_PLATFORM=offscreen freezecut_shots <region-dir> --demo-region`. Each `frames.txt` records the cursor tip or crosshair center in the pixels of its matching PNG. The editor and region recordings can use different display scales.
+
+Compose the GIF on Windows with PowerShell and FFmpeg.
+
+```powershell
+./scripts/compose-demo.ps1 -EditorFrames dist/demo/editor -RegionFrames dist/demo/region -OutputPath docs/media/demo.gif
+```
+
+Check a frame mid-drag in Region, Redact, Blur and Arrow. The hotspot should follow the moving corner or arrow tip. Check the result at its README size and watch the loop through the Copy confirmation.
 
 Platform code sits behind `Q_OS_…` checks next to the feature it serves, or in `src/platform` when it needs a file of its own.
 

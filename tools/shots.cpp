@@ -21,6 +21,7 @@
 #include <QListView>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPixmap>
 #include <QScreen>
 #include <QTemporaryDir>
 #include <QTest>
@@ -35,12 +36,14 @@ void settle(int ms = 350)
     QTest::qWait(ms);
 }
 
-void save(QWidget &window, const QString &path)
+QPixmap save(QWidget &window, const QString &path)
 {
-    if (!window.grab().save(path)) {
+    const QPixmap image = window.grab();
+    if (!image.save(path)) {
         qWarning("Could not write %s", qPrintable(path));
         saveFailed = true;
     }
+    return image;
 }
 
 void shoot(QWidget &window, const QString &name)
@@ -344,15 +347,17 @@ void libraryShots(int port, const QString &token)
     shoot(library, QStringLiteral("24-library-unreachable"));
 }
 
-// Records the frames of the README demo. A grab leaves the pointer out, so each frame's pointer
-// position and cursor go to frames.txt for drawing it in when the frames are composited.
+// A grab leaves the pointer out. Record its position in PNG pixels so the compositor
+// resizes the pointer and image with the same transform, even on a high-DPI screen.
 class Recorder {
 public:
     Recorder(const QString &directory, int first) : directory(directory), index(first), log(directory + QStringLiteral("/frames.txt"))
     {
         QDir().mkpath(directory);
-        if (!log.open(QIODevice::Append | QIODevice::Text)) {
+        const QByteArray header = "# freezecut-frame-coordinates: png-pixels\n";
+        if (!log.open(QIODevice::WriteOnly | QIODevice::Text) || log.write(header) != header.size()) {
             qWarning("Cannot write %s", qPrintable(log.fileName()));
+            saveFailed = true;
         }
     }
 
@@ -362,9 +367,14 @@ public:
 
     void frame(QWidget &window)
     {
-        save(window, QStringLiteral("%1/%2.png").arg(directory).arg(index, 4, 10, QLatin1Char('0')));
-        log.write(QStringLiteral("%1 %2 %3 %4\n").arg(index).arg(pointer.x()).arg(pointer.y()).arg(QString::fromLatin1(cursor)).toUtf8());
-        log.flush();
+        const QPixmap image = save(window, QStringLiteral("%1/%2.png").arg(directory).arg(index, 4, 10, QLatin1Char('0')));
+        const QPointF pixel = QPointF(pointer) * image.devicePixelRatio();
+        const QByteArray entry = QStringLiteral("%1 %2 %3 %4\n")
+            .arg(index).arg(pixel.x(), 0, 'f', 3).arg(pixel.y(), 0, 'f', 3).arg(QString::fromLatin1(cursor)).toUtf8();
+        if (log.isOpen() && (log.write(entry) != entry.size() || !log.flush())) {
+            qWarning("Could not write frame %d to %s", index, qPrintable(log.fileName()));
+            saveFailed = true;
+        }
         ++index;
     }
 
