@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/demo.gif" width="880" alt="Selecting a region of an API keys page, redacting the live key, blurring the test keys, pointing an arrow at the Create key button and copying the result">
+  <img src="docs/media/demo.gif" width="880" alt="Capturing part of a sample API keys page, redacting the production key, blurring the test keys, adding an arrow and copying the result">
 </p>
 
 ## Why Frameline
@@ -34,12 +34,12 @@
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/media/region.png" alt="Region selection with viewfinder corners and a size badge"></td>
-    <td width="50%"><img src="docs/media/editor-themes.png" alt="The editor in dark and light appearance"></td>
+    <td width="50%"><img src="docs/media/region.png" alt="Region selection outlined with corner marks and a pixel-size label at the selection edge"></td>
+    <td width="50%"><img src="docs/media/editor-themes.png" alt="The editor in dark and light themes, with annotation tools on the left and colors, stroke widths and zoom below the screenshot"></td>
   </tr>
   <tr>
     <td><strong>Select on a frozen screen.</strong> Crosshair guides line up the first corner and the badge shows the exact size in pixels.</td>
-    <td><strong>Mark up in light or dark.</strong> Tools, colors and stroke widths live in one floating bar; the screenshot gets the rest of the window.</td>
+    <td><strong>Mark up in light or dark.</strong> Choose a tool on the left, then adjust its color or stroke width below the screenshot.</td>
   </tr>
   <tr>
     <td><img src="docs/media/library.png" alt="Library grid of screenshots from several devices"></td>

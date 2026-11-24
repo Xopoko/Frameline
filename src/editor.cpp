@@ -27,7 +27,6 @@
 #include <QShortcut>
 #include <QStackedWidget>
 #include <QVBoxLayout>
-#include <QVariantAnimation>
 #include <QWindow>
 
 #include <algorithm>
@@ -41,8 +40,7 @@
 
 namespace {
 
-// Space around the screenshot. The bottom leaves room for the floating tool island.
-const QMargins stageMargins(40, 32, 40, 92);
+constexpr QMargins stageMargins(24, 24, 24, 24);
 
 struct ToolChoice {
     Tool tool;
@@ -81,8 +79,8 @@ QString withKeys(const QString &label, const QString &keys)
 void paintChecker(QPainter &painter, const QRect &area)
 {
     const theme::Palette &c = theme::colors();
-    const QColor light = c.dark ? QColor(0x23, 0x2a, 0x33) : QColor(0xff, 0xff, 0xff);
-    const QColor dark = c.dark ? QColor(0x1a, 0x20, 0x27) : QColor(0xe6, 0xe9, 0xed);
+    const QColor light = c.raised;
+    const QColor dark = c.control;
     painter.fillRect(area, light);
     constexpr int tile = 8;
     for (int y = area.top() / tile * tile; y <= area.bottom(); y += tile) {
@@ -258,7 +256,7 @@ private:
     }
 };
 
-// The scrollable stage behind the screenshot. It paints the backdrop and the screenshot's shadow.
+// The scrollable stage paints the backdrop and a hairline around the screenshot.
 class Workspace final : public QScrollArea {
 public:
     explicit Workspace(QWidget *parent) : QScrollArea(parent)
@@ -285,15 +283,10 @@ protected:
         const QRect damage = static_cast<QPaintEvent *>(event)->rect();
         QPainter painter(viewport());
         painter.fillRect(damage, c.stage);
-        if (subject && subject->isVisible() && subject->width() > 1) {
+        if (subject && subject->isVisible()) {
             const QRect frame(subject->mapTo(viewport(), QPoint(0, 0)), subject->size());
-            if (damage.intersects(frame.adjusted(-24, -24, 24, 24))) {
-                theme::paintShadow(painter, QRectF(frame), 3, 16, 5, c.dark ? 1.6 : 1.1);
-                painter.setRenderHint(QPainter::Antialiasing);
-                painter.setPen(QPen(theme::withAlpha(c.text, c.dark ? 0.10 : 0.12), 1));
-                painter.setBrush(Qt::NoBrush);
-                painter.drawRect(QRectF(frame).adjusted(-0.5, -0.5, 0.5, 0.5));
-            }
+            painter.setPen(c.borderStrong);
+            painter.drawRect(frame.adjusted(-1, -1, 0, 0));
         }
         return true;
     }
@@ -326,19 +319,10 @@ public:
         setAccessibleName(QStringLiteral("Frameline"));
     }
 
-    void setShowsName(bool value)
-    {
-        if (showsName != value) {
-            showsName = value;
-            updateGeometry();
-            update();
-        }
-    }
-
     QSize sizeHint() const override
     {
-        const int name = showsName ? QFontMetrics(theme::font(14, theme::Weight::Semibold)).horizontalAdvance(text()) + 9 : 0;
-        return QSize(22 + name, 32);
+        const int name = QFontMetrics(theme::font(14, theme::Weight::Semibold)).horizontalAdvance(text());
+        return QSize(31 + name, theme::controlHeight);
     }
 
 protected:
@@ -346,17 +330,14 @@ protected:
     {
         const theme::Palette &c = theme::colors();
         QPainter painter(this);
-        paintIcon(painter, Icon::Region, QRectF(0, 5, 22, 22), c.accent, 2);
-        if (showsName) {
-            painter.setPen(c.text);
-            painter.setFont(theme::font(14, theme::Weight::Semibold));
-            painter.drawText(QRectF(31, 0, width() - 31, height()), Qt::AlignVCenter | Qt::AlignLeft, text());
-        }
+        paintIcon(painter, Icon::Region, QRectF(0, 5, 22, 22), c.text, 2);
+        painter.setPen(c.text);
+        painter.setFont(theme::font(14, theme::Weight::Semibold));
+        painter.drawText(QRectF(31, 0, width() - 31, height()), Qt::AlignVCenter | Qt::AlignLeft, text());
     }
 
 private:
     static QString text() { return QStringLiteral("Frameline"); }
-    bool showsName = true;
 };
 
 // The empty editor: what Frameline is for, framed by the viewfinder corners of its icon.
@@ -391,7 +372,7 @@ public:
     }
 
     QColor color;
-    QSize sizeHint() const override { return QSize(24, theme::controlHeight); }
+    QSize sizeHint() const override { return QSize(26, theme::controlHeight); }
 
 protected:
     void paintEvent(QPaintEvent *) override
@@ -402,18 +383,23 @@ protected:
         if (!isEnabled()) {
             painter.setOpacity(0.28);
         }
-        const QPointF center = QRectF(rect()).center();
-        const qreal radius = underMouse() && isEnabled() && !isChecked() ? 8 : 7;
-        if (isChecked()) {
-            painter.setPen(QPen(c.text, 2));
-            painter.setBrush(Qt::NoBrush);
-            painter.drawEllipse(center, 10.5, 10.5);
+        const QRectF frame = QRectF(rect()).adjusted(1, 4, -1, -4);
+        const QPointF center = frame.center();
+        if (isEnabled() && (underMouse() || isDown())) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(isDown() ? c.controlPressed : c.controlHover);
+            painter.drawRoundedRect(frame, 5, 5);
         }
-        painter.setPen(QPen(theme::withAlpha(c.text, 0.22), 1));
+        if (isChecked()) {
+            painter.setPen(QPen(c.text, 1.5));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawEllipse(center, 10, 10);
+        }
+        painter.setPen(QPen(theme::withAlpha(c.text, 0.35), 1));
         painter.setBrush(color);
-        painter.drawEllipse(center, radius, radius);
+        painter.drawEllipse(center, 7, 7);
         if (hasFocus()) {
-            theme::paintFocusRing(painter, QRectF(rect()).adjusted(0, 3, 0, -3), 6);
+            theme::paintFocusRing(painter, frame, 5);
         }
     }
 };
@@ -430,7 +416,7 @@ public:
     }
 
     int pixels;
-    QSize sizeHint() const override { return QSize(26, theme::controlHeight); }
+    QSize sizeHint() const override { return QSize(28, theme::controlHeight); }
 
 protected:
     void paintEvent(QPaintEvent *) override
@@ -445,80 +431,25 @@ protected:
         if (isChecked()) {
             painter.setPen(Qt::NoPen);
             painter.setBrush(c.accentSoft);
-            painter.drawRoundedRect(frame, 6, 6);
+            painter.drawRoundedRect(frame, 5, 5);
         } else if (underMouse() && isEnabled()) {
             painter.setPen(Qt::NoPen);
-            painter.setBrush(c.controlHover);
-            painter.drawRoundedRect(frame, 6, 6);
+            painter.setBrush(isDown() ? c.controlPressed : c.controlHover);
+            painter.drawRoundedRect(frame, 5, 5);
         }
-        const qreal diameter = 2.5 + pixels * 0.72;
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(isChecked() ? c.accent : c.textMuted);
-        painter.drawEllipse(frame.center(), diameter / 2, diameter / 2);
+        const QPointF center = frame.center();
+        painter.setPen(QPen(isChecked() ? c.accent : c.textMuted, 1 + pixels * 0.4, Qt::SolidLine, Qt::RoundCap));
+        painter.drawLine(center - QPointF(6, 0), center + QPointF(6, 0));
         if (hasFocus()) {
-            theme::paintFocusRing(painter, frame, 6);
+            theme::paintFocusRing(painter, frame, 5);
         }
     }
-};
-
-// The tool island draws the current tool's highlight so it can glide between tools.
-class ToolIsland final : public Island {
-public:
-    explicit ToolIsland(QWidget *parent) : Island(parent), animation(new QVariantAnimation(this))
-    {
-        animation->setDuration(200);
-        animation->setEasingCurve(QEasingCurve::OutCubic);
-        QObject::connect(animation, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) {
-            thumb = value.toRectF();
-            update();
-        });
-    }
-
-    void track(QWidget *button, bool animated)
-    {
-        target = button;
-        const QRectF destination = button ? QRectF(button->geometry()) : QRectF();
-        if (animated && isVisible() && !thumb.isEmpty()) {
-            animation->stop();
-            animation->setStartValue(thumb);
-            animation->setEndValue(destination);
-            animation->start();
-        } else if (animation->state() != QAbstractAnimation::Running) {
-            thumb = destination;
-            update();
-        }
-    }
-
-    void sync()
-    {
-        track(target, false);
-    }
-
-protected:
-    void paintPanel(QPainter &painter) override
-    {
-        if (thumb.isEmpty()) {
-            return;
-        }
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(theme::colors().accentSoft);
-        painter.drawRoundedRect(thumb, theme::radius, theme::radius);
-    }
-
-    void resizeEvent(QResizeEvent *event) override
-    {
-        Island::resizeEvent(event);
-        sync();
-    }
-
-private:
-    QVariantAnimation *animation;
-    QWidget *target = nullptr;
-    QRectF thumb;
 };
 
 constexpr auto editorRules = R"(
     QLabel#hero { font-size: 30px; font-weight: 600; }
+    QWidget#toolRail { background: @surface; border-right: 1px solid @border; }
+    QWidget#editorFooter { background: @surface; border-top: 1px solid @border; }
 )";
 
 struct UndoPatch {
@@ -570,8 +501,7 @@ struct EditorWindow::Ui {
         stage->onResize = [this] { layoutStage(); };
 
         addShortcuts();
-        selectTool(Tool::Arrow, false);
-        refreshControls();
+        selectTool(Tool::Arrow);
     }
 
     EditorWindow &window;
@@ -581,7 +511,6 @@ struct EditorWindow::Ui {
     Banner *shortcutBanner = nullptr;
     Banner *libraryBanner = nullptr;
     Notice *toast = nullptr;
-    Brand *brand = nullptr;
     Button *regionButton = nullptr;
     Button *screenButton = nullptr;
     Button *libraryButton = nullptr;
@@ -593,14 +522,10 @@ struct EditorWindow::Ui {
     Button *heroRegion = nullptr;
     Button *heroScreen = nullptr;
     QLabel *shortcutTip = nullptr;
-    Frame *editorPage = nullptr;
     Workspace *workspace = nullptr;
     QWidget *holder = nullptr;
     ScreenshotCanvas *canvas = nullptr;
-    ToolIsland *toolIsland = nullptr;
-    Island *zoomIsland = nullptr;
     QLabel *dimensions = nullptr;
-    QWidget *dimensionsSeparator = nullptr;
     Button *zoomButton = nullptr;
     QButtonGroup *tools = nullptr;
     QList<Swatch *> swatches;
@@ -619,17 +544,18 @@ struct EditorWindow::Ui {
     {
         auto *bar = new TopBar(root);
         auto *row = new QHBoxLayout(bar);
-        row->setContentsMargins(16, 10, 12, 10);
+        row->setContentsMargins(16, 8, 12, 8);
         row->setSpacing(4);
-        brand = new Brand(bar);
-        row->addWidget(brand);
-        row->addSpacing(18);
+        row->addWidget(new Brand(bar));
+        row->addSpacing(12);
 
         regionButton = new Button(Button::Ghost, Icon::Region, QStringLiteral("Region"), bar);
         screenButton = new Button(Button::Ghost, Icon::Screen, QStringLiteral("Screen"), bar);
         libraryButton = new Button(Button::Ghost, Icon::Library, QStringLiteral("Library"), bar);
         regionButton->setAccessibleName(QStringLiteral("Capture a region"));
         screenButton->setAccessibleName(QStringLiteral("Capture the screen"));
+        regionButton->setToolTip(regionButton->accessibleName());
+        screenButton->setToolTip(screenButton->accessibleName());
         libraryButton->setToolTip(QStringLiteral("Screenshots from all your devices"));
         row->addWidget(regionButton);
         row->addWidget(screenButton);
@@ -686,14 +612,7 @@ struct EditorWindow::Ui {
         auto *title = theme::label(QStringLiteral("Take a screenshot"), "hero", content);
         title->setAlignment(Qt::AlignCenter);
         stack->addWidget(title);
-        stack->addSpacing(10);
-        auto *subtitle = theme::label(QStringLiteral("Select part of the screen or capture all of it, "
-                                                     "then mark it up and copy or save."), "muted", content);
-        subtitle->setAlignment(Qt::AlignCenter);
-        subtitle->setWordWrap(true);
-        subtitle->setContentsMargins(70, 0, 70, 0);
-        stack->addWidget(subtitle);
-        stack->addSpacing(30);
+        stack->addSpacing(24);
 
         heroRegion = new Button(Button::Primary, Icon::Region, QStringLiteral("Select region"), content);
         heroScreen = new Button(Button::Tonal, Icon::Screen, QStringLiteral("Capture screen"), content);
@@ -735,8 +654,12 @@ struct EditorWindow::Ui {
 
     QWidget *makeEditor()
     {
-        editorPage = new Frame(pages);
-        workspace = new Workspace(editorPage);
+        auto *page = new QWidget(pages);
+        auto *column = new QVBoxLayout(page);
+        column->setContentsMargins(0, 0, 0, 0);
+        column->setSpacing(0);
+
+        workspace = new Workspace(page);
         holder = new QWidget;
         canvas = new ScreenshotCanvas(holder);
         workspace->setWidget(holder);
@@ -758,39 +681,59 @@ struct EditorWindow::Ui {
             annotations.push_back(std::move(annotation));
             applyNextAnnotation();
         };
-        makeToolIsland();
-        makeZoomIsland();
-        editorPage->onResize = [this] { layoutEditor(); };
-        return editorPage;
+
+        auto *row = new QHBoxLayout;
+        row->setContentsMargins(0, 0, 0, 0);
+        row->setSpacing(0);
+        row->addWidget(makeToolRail(page));
+        row->addWidget(workspace, 1);
+        column->addLayout(row, 1);
+        column->addWidget(makeEditorFooter(page));
+        return page;
     }
 
-    void makeToolIsland()
+    QWidget *makeToolRail(QWidget *parent)
     {
-        toolIsland = new ToolIsland(editorPage);
-        QHBoxLayout *row = toolIsland->row();
-        tools = new QButtonGroup(toolIsland);
+        auto *rail = new QWidget(parent);
+        rail->setObjectName(QStringLiteral("toolRail"));
+        rail->setAttribute(Qt::WA_StyledBackground);
+        auto *column = new QVBoxLayout(rail);
+        column->setContentsMargins(8, 10, 8, 8);
+        column->setSpacing(4);
+        tools = new QButtonGroup(rail);
         for (const auto &choice : toolChoices) {
             const QString label = QString::fromUtf8(choice.label);
             const QString key = QString::fromLatin1(choice.key);
-            auto *button = new Button(Button::Ghost, choice.icon, {}, toolIsland);
+            auto *button = new Button(Button::Ghost, choice.icon, {}, rail);
             button->setCheckable(true);
-            button->setCheckedDrawnByParent(true);
+            button->setLarge(true);
             button->setToolTip(withKeys(label, key));
             button->setAccessibleName(label);
             tools->addButton(button, static_cast<int>(choice.tool));
-            row->addWidget(button);
+            column->addWidget(button);
             addShortcut(QKeySequence(key), [this, button] {
                 if (!source.isNull()) {
                     button->click();
                 }
             });
         }
-        QObject::connect(tools, &QButtonGroup::idClicked, &window, [this](int id) { selectTool(static_cast<Tool>(id), true); });
+        column->addStretch();
+        QObject::connect(tools, &QButtonGroup::idClicked, &window, [this](int id) { selectTool(static_cast<Tool>(id)); });
+        return rail;
+    }
 
-        toolIsland->addSeparator();
-        auto *colorGroup = new QButtonGroup(toolIsland);
+    QWidget *makeEditorFooter(QWidget *parent)
+    {
+        auto *footer = new QWidget(parent);
+        footer->setObjectName(QStringLiteral("editorFooter"));
+        footer->setAttribute(Qt::WA_StyledBackground);
+        auto *row = new QHBoxLayout(footer);
+        row->setContentsMargins(12, 5, 12, 5);
+        row->setSpacing(2);
+
+        auto *colorGroup = new QButtonGroup(footer);
         for (const auto &[name, value] : markColors) {
-            auto *swatch = new Swatch(QString::fromLatin1(name), QColor(QRgb(value)), toolIsland);
+            auto *swatch = new Swatch(QString::fromLatin1(name), QColor(QRgb(value)), footer);
             colorGroup->addButton(swatch);
             swatches.append(swatch);
             row->addWidget(swatch);
@@ -798,35 +741,30 @@ struct EditorWindow::Ui {
         }
         swatches.first()->setChecked(true);
 
-        toolIsland->addSeparator();
-        auto *strokeGroup = new QButtonGroup(toolIsland);
+        row->addWidget(separator(footer));
+        auto *strokeGroup = new QButtonGroup(footer);
         for (const int pixels : strokeWidths) {
-            auto *choice = new StrokeChoice(pixels, toolIsland);
+            auto *choice = new StrokeChoice(pixels, footer);
             strokeGroup->addButton(choice);
             strokes.append(choice);
             row->addWidget(choice);
             QObject::connect(choice, &QAbstractButton::clicked, &window, [this, pixels] { canvas->strokeWidth = pixels; });
         }
         strokes.at(defaultStrokeIndex)->setChecked(true);
-    }
 
-    void makeZoomIsland()
-    {
-        zoomIsland = new Island(editorPage);
-        QHBoxLayout *row = zoomIsland->row();
-        dimensions = theme::label({}, "caption", zoomIsland);
-        dimensions->setContentsMargins(8, 0, 4, 0);
+        row->addStretch();
+        dimensions = theme::label({}, "caption", footer);
+        dimensions->setFont(theme::font(12, theme::Weight::Regular, true));
         dimensions->setToolTip(QStringLiteral("Screenshot size in pixels"));
         row->addWidget(dimensions);
-        dimensionsSeparator = separator(zoomIsland);
-        row->addWidget(dimensionsSeparator);
-        auto *minus = new Button(Button::Ghost, Icon::Minus, {}, zoomIsland);
-        auto *plus = new Button(Button::Ghost, Icon::Plus, {}, zoomIsland);
+        row->addWidget(separator(footer));
+        auto *minus = new Button(Button::Ghost, Icon::Minus, {}, footer);
+        auto *plus = new Button(Button::Ghost, Icon::Plus, {}, footer);
         minus->setToolTip(withKeys(QStringLiteral("Zoom out"), QStringLiteral("−")));
         plus->setToolTip(withKeys(QStringLiteral("Zoom in"), QStringLiteral("+")));
         minus->setAccessibleName(QStringLiteral("Zoom out"));
         plus->setAccessibleName(QStringLiteral("Zoom in"));
-        zoomButton = new Button(Button::Ghost, Icon::None, QStringLiteral("100%"), zoomIsland);
+        zoomButton = new Button(Button::Ghost, Icon::None, QStringLiteral("100%"), footer);
         zoomButton->setFixedWidth(60);
         QObject::connect(minus, &QPushButton::clicked, &window, [this] { stepZoom(-1); });
         QObject::connect(plus, &QPushButton::clicked, &window, [this] { stepZoom(1); });
@@ -840,53 +778,21 @@ struct EditorWindow::Ui {
         row->addWidget(minus);
         row->addWidget(zoomButton);
         row->addWidget(plus);
+        return footer;
     }
 
     void layoutStage()
     {
         pages->setGeometry(stage->rect());
         const int width = stage->width();
-        brand->setShowsName(width >= 820);
         for (Button *button : {regionButton, screenButton, libraryButton}) {
-            button->setCompact(width < 980);
+            button->setCompact(width < 840);
         }
         if (toast->isVisible()) {
             const QSize size = toast->sizeFor(std::min(width - 32, 520));
             toast->setGeometry((width - size.width()) / 2, 14 - Notice::shadowMargin, size.width(), size.height());
             toast->raise();
         }
-    }
-
-    void layoutEditor()
-    {
-        const QRect area = editorPage->rect();
-        workspace->setGeometry(area);
-        constexpr int gap = 16;
-        const int margin = Island::shadowMargin;
-
-        dimensions->setVisible(true);
-        dimensionsSeparator->setVisible(true);
-        zoomIsland->adjustSize();
-        toolIsland->adjustSize();
-        QSize tool = toolIsland->size();
-        QSize zoomSize = zoomIsland->size();
-        const int panelTool = tool.width() - 2 * margin;
-        if (panelTool + 2 * (zoomSize.width() - 2 * margin) + 4 * gap > area.width()) {
-            dimensions->setVisible(false);
-            dimensionsSeparator->setVisible(false);
-            zoomIsland->adjustSize();
-            zoomSize = zoomIsland->size();
-        }
-        const int bottom = area.height() - gap + margin;
-        const int zoomX = area.width() - gap - zoomSize.width() + margin;
-        zoomIsland->move(zoomX, bottom - zoomSize.height());
-        int toolX = (area.width() - tool.width()) / 2;
-        const int limit = zoomX + margin - gap - (tool.width() - margin);
-        toolX = std::max(gap - margin, std::min(toolX, limit));
-        toolIsland->move(toolX, bottom - tool.height());
-        toolIsland->raise();
-        zoomIsland->raise();
-        toolIsland->sync();
     }
 
     void addShortcuts()
@@ -909,13 +815,11 @@ struct EditorWindow::Ui {
         QObject::connect(shortcut, &QShortcut::activated, &window, handler);
     }
 
-    void selectTool(Tool tool, bool animated)
+    void selectTool(Tool tool)
     {
         canvas->cancelStroke();
         canvas->tool = tool;
-        QAbstractButton *button = tools->button(static_cast<int>(tool));
-        button->setChecked(true);
-        toolIsland->track(button, animated);
+        tools->button(static_cast<int>(tool))->setChecked(true);
         refreshControls();
     }
 
@@ -956,10 +860,9 @@ struct EditorWindow::Ui {
         fit = true;
         canvas->cancelStroke();
         pages->setCurrentIndex(source.isNull() ? 0 : 1);
-        dimensions->setText(QStringLiteral("%1 × %2").arg(source.width()).arg(source.height()));
+        dimensions->setText(QStringLiteral("%1 × %2 px").arg(source.width()).arg(source.height()));
         updateImage();
         updateZoom();
-        layoutEditor();
         if (!source.isNull()) {
             canvas->setFocus();
         }
@@ -1116,7 +1019,6 @@ void EditorWindow::showEvent(QShowEvent *event)
                                                         [this] { ui->updateZoom(); });
     }
     ui->updateZoom();
-    ui->layoutEditor();
 }
 
 void EditorWindow::setCapture(const QImage &image)

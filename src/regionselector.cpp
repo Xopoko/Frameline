@@ -5,6 +5,7 @@
 #include <QCloseEvent>
 #include <QCoreApplication>
 #include <QCursor>
+#include <QFontMetrics>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -37,13 +38,29 @@
 namespace {
 
 // The overlay sits on arbitrary screen content, so it keeps one dark treatment in both themes.
-const QColor backdrop(10, 12, 15);
-const QColor scrim(8, 10, 13, 150);
-const QColor panel(16, 20, 24, 238);
-const QColor panelBorder(255, 255, 255, 28);
-const QColor panelText(242, 246, 248);
-const QColor panelMuted(160, 172, 182);
+const QColor backdrop(19, 19, 22);
+const QColor scrim(18, 18, 22, 138);
+const QColor panel(32, 32, 36);
+const QColor panelBorder(83, 83, 91);
+const QColor panelText(245, 244, 242);
+const QColor panelMuted(200, 199, 204);
 const QColor accent = theme::overlayAccent;
+
+constexpr int panelMargin = 8;
+constexpr int panelHeight = 40;
+constexpr int panelPadding = 4;
+constexpr int instructionInset = 12;
+constexpr int iconSize = 16;
+constexpr int iconSpacing = 8;
+constexpr int actionSpacing = 6;
+
+void drawPanel(QPainter &painter, const QRectF &area, qreal radius)
+{
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(panelBorder, 1));
+    painter.setBrush(panel);
+    painter.drawRoundedRect(area.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
+}
 
 #ifdef FRAMELINE_NATIVE_MONITOR_GEOMETRY
 QRectF nativeScreenGeometry(QScreen *screen)
@@ -143,17 +160,21 @@ public:
         setCursor(Qt::CrossCursor);
         setFocusPolicy(Qt::StrongFocus);
         setWindowTitle(QStringLiteral("Frameline — Select region"));
-        setAccessibleDescription(QStringLiteral("Select a rectangular region. Press Esc to cancel."));
+        setAccessibleDescription(QStringLiteral("Drag to capture a region. Press Esc or right-click to cancel."));
 
-        cancel_ = new QPushButton(QStringLiteral("Cancel"), this);
+        cancel_ = new QPushButton(QStringLiteral("Cancel  ·  Esc"), this);
         cancel_->setAccessibleName(QStringLiteral("Cancel region selection"));
+        cancel_->setToolTip(QStringLiteral("Press Esc or right-click to cancel"));
         cancel_->setCursor(Qt::PointingHandCursor);
+        cancel_->setFont(theme::font(13, theme::Weight::Medium));
         cancel_->installEventFilter(this);
         cancel_->setStyleSheet(QStringLiteral(
-            "QPushButton { background: rgba(16, 20, 24, 238); color: #f2f6f8; border: 1px solid rgba(255, 255, 255, 28);"
-            " border-radius: 10px; padding: 0 16px; min-height: 40px; font-size: 13px; font-weight: 500; }"
-            "QPushButton:hover { background: rgba(38, 46, 56, 245); }"
-            "QPushButton:focus { border-color: #5fe3b5; }"));
+            "QPushButton { background: transparent; color: %1; border: 1px solid transparent;"
+            " border-radius: 5px; padding: 0 10px; outline: 0; }"
+            "QPushButton:hover { background: #39393e; color: %2; }"
+            "QPushButton:pressed { background: #484850; }"
+            "QPushButton:focus { border-color: %3; }")
+            .arg(panelMuted.name(), panelText.name(), accent.name()));
         connect(cancel_, &QPushButton::clicked, session_, [session] { session->finish(); });
 
         if (screen) {
@@ -212,7 +233,7 @@ public:
         if (dragging != dragging_) {
             dragging_ = dragging;
             cancel_->setVisible(!dragging);
-            damage += instructionsRect().toAlignedRect().adjusted(-2, -2, 2, 2);
+            damage += instructions_;
             damage += guides(hover_);
             if (dragging)
                 hover_ = QPointF(-1, -1);
@@ -285,8 +306,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override
     {
         QWidget::resizeEvent(event);
-        cancel_->adjustSize();
-        cancel_->move(std::max(8, width() - cancel_->width() - 24), 24);
+        layoutInstructions();
         hover_ = QPointF(-1, -1);
         if (dragging_)
             session_->refreshOverlays();
@@ -315,13 +335,13 @@ protected:
             painter.save();
             painter.setClipRect(photo);
             painter.setRenderHint(QPainter::Antialiasing);
-            painter.setPen(QPen(QColor(0, 0, 0, 120), 3));
+            painter.setPen(QPen(QColor(16, 16, 20, 210), 3));
             painter.drawRect(selection_);
-            painter.setPen(QPen(accent, 1.25));
+            painter.setPen(QPen(accent, 1));
             painter.drawRect(selection_);
-            const qreal corner = std::min({18.0, selection_.width() / 3, selection_.height() / 3});
-            if (corner >= 4)
-                theme::paintBrackets(painter, selection_.adjusted(-3, -3, 3, 3), corner, 3, accent);
+            const qreal corner = std::min({14.0, selection_.width() / 4, selection_.height() / 4});
+            if (corner >= 3)
+                theme::paintBrackets(painter, selection_.adjusted(-1, -1, 1, 1), corner, 2, accent);
             painter.restore();
 
             if (!badge_.isEmpty())
@@ -377,43 +397,46 @@ private:
         return QRegion(outer.intersected(photo.toAlignedRect())).subtracted(QRegion(inner));
     }
 
-    QFont instructionTitleFont() const
+    void layoutInstructions()
     {
-        return theme::font(13, theme::Weight::Semibold);
-    }
+        const int titleWidth = QFontMetrics(instructionFont_).horizontalAdvance(instructionText_);
+        const int cancelWidth = cancel_->sizeHint().width();
+        const int fullWidth = instructionInset + iconSize + iconSpacing + titleWidth
+            + instructionInset + 1 + actionSpacing + cancelWidth + panelPadding;
+        const int available = std::max(0, width() - 2 * panelMargin);
+        const int panelWidth = std::min(fullWidth, available);
+        const int top = std::clamp(height() - panelHeight - panelMargin, 0, 20);
+        instructions_ = QRect((width() - panelWidth) / 2, top, panelWidth, panelHeight);
 
-    QFont instructionHelpFont() const
-    {
-        return theme::font(13);
-    }
-
-    QRectF instructionsRect() const
-    {
-        const int titleWidth = QFontMetrics(instructionTitleFont()).horizontalAdvance(title_);
-        const int helpWidth = QFontMetrics(instructionHelpFont()).horizontalAdvance(help_);
-        const qreal width = 16 + 18 + 10 + titleWidth + 12 + helpWidth + 18;
-        const qreal x = std::max(8.0, (this->width() - width) / 2);
-        return QRectF(x, 24, width, 40);
+        const int actionWidth = std::clamp(panelWidth - 2 * panelPadding, 0, cancelWidth);
+        cancel_->setGeometry(instructions_.right() + 1 - panelPadding - actionWidth,
+                             instructions_.top() + panelPadding,
+                             actionWidth, panelHeight - 2 * panelPadding);
     }
 
     void drawInstructions(QPainter &painter) const
     {
-        const QRectF pill = instructionsRect();
+        if (instructions_.isEmpty())
+            return;
+
+        const QRectF area(instructions_);
+        const int divider = cancel_->x() - actionSpacing;
+        const qreal titleLeft = area.left() + instructionInset + iconSize + iconSpacing;
+        const int titleWidth = int(divider - instructionInset - titleLeft);
         painter.save();
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(panelBorder, 1));
-        painter.setBrush(panel);
-        painter.drawRoundedRect(pill.adjusted(0.5, 0.5, -0.5, -0.5), 20, 20);
-        theme::paintBrackets(painter, QRectF(pill.left() + 16, pill.top() + 11, 18, 18), 5, 1.8, accent);
-        painter.setPen(panelText);
-        painter.setFont(instructionTitleFont());
-        const qreal titleX = pill.left() + 16 + 18 + 10;
-        const int titleWidth = QFontMetrics(instructionTitleFont()).horizontalAdvance(title_);
-        painter.drawText(QRectF(titleX, pill.top(), titleWidth + 1, pill.height()), Qt::AlignVCenter, title_);
-        painter.setPen(panelMuted);
-        painter.setFont(instructionHelpFont());
-        painter.drawText(QRectF(titleX + titleWidth + 12, pill.top(), pill.right() - titleX - titleWidth - 12, pill.height()),
-                         Qt::AlignVCenter, help_);
+        drawPanel(painter, area, 9);
+        if (titleWidth > 0) {
+            theme::paintBrackets(painter, QRectF(area.left() + instructionInset, area.center().y() - iconSize / 2.0,
+                                                iconSize, iconSize), 5, 1.5, accent);
+            painter.fillRect(QRectF(divider, area.top() + 10, 1, area.height() - 20), panelBorder);
+            painter.setPen(panelText);
+            painter.setFont(instructionFont_);
+            const QFontMetrics metrics(instructionFont_);
+            const QString title = metrics.horizontalAdvance(instructionText_) <= titleWidth
+                ? instructionText_ : QStringLiteral("Drag");
+            const QString text = metrics.elidedText(title, Qt::ElideRight, titleWidth);
+            painter.drawText(QRectF(titleLeft, area.top(), titleWidth, area.height()), Qt::AlignVCenter, text);
+        }
         painter.restore();
     }
 
@@ -449,7 +472,7 @@ private:
         painter.setPen(QPen(QColor(0, 0, 0, 70), 1));
         painter.drawLine(QPointF(x + 1, photo.top()), QPointF(x + 1, photo.bottom()));
         painter.drawLine(QPointF(photo.left(), y + 1), QPointF(photo.right(), y + 1));
-        painter.setPen(QPen(theme::withAlpha(accent, 0.75), 1));
+        painter.setPen(QPen(QColor(245, 244, 242, 112), 1));
         painter.drawLine(QPointF(x, photo.top()), QPointF(x, photo.bottom()));
         painter.drawLine(QPointF(photo.left(), y), QPointF(photo.right(), y));
         painter.restore();
@@ -462,21 +485,34 @@ private:
 
     QRectF measurementRect(const QRectF &visible, const QString &label) const
     {
-        const int badgeWidth = QFontMetrics(measurementFont()).horizontalAdvance(label) + 22;
-        const qreal maxX = std::max(7, width() - badgeWidth - 7);
-        const qreal x = std::clamp(visible.left() - 3, 7.0, maxX);
-        const qreal below = visible.bottom() + 10;
-        const qreal y = below + 26 <= height() - 7 ? below : std::max(7.0, visible.bottom() - 34);
-        return QRectF(x, y, badgeWidth, 26);
+        constexpr qreal gap = 8;
+        const QSizeF size(QFontMetrics(measurementFont()).horizontalAdvance(label) + 18, 26);
+        const QRectF bounds = QRectF(rect()).adjusted(gap, gap, -gap, -gap);
+        if (size.width() > bounds.width() || size.height() > bounds.height())
+            return {};
+
+        const qreal x = std::clamp(visible.right() - size.width(), bounds.left(), bounds.right() - size.width());
+        const qreal below = visible.bottom() + gap;
+        if (below + size.height() <= bounds.bottom())
+            return QRectF(QPointF(x, below), size);
+
+        const qreal above = visible.top() - gap - size.height();
+        if (above >= bounds.top())
+            return QRectF(QPointF(x, above), size);
+
+        const qreal y = std::clamp(visible.bottom() - size.height() - gap, bounds.top(), bounds.bottom() - size.height());
+        const qreal right = visible.right() + gap;
+        if (right + size.width() <= bounds.right())
+            return QRectF(QPointF(right, y), size);
+
+        const qreal left = visible.left() - gap - size.width();
+        return QRectF(QPointF(left >= bounds.left() ? left : x, y), size);
     }
 
     void drawMeasurement(QPainter &painter) const
     {
         painter.setFont(measurementFont());
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setBrush(panel);
-        painter.setPen(QPen(panelBorder, 1));
-        painter.drawRoundedRect(badge_.adjusted(0.5, 0.5, -0.5, -0.5), 13, 13);
+        drawPanel(painter, badge_, 5);
         painter.setPen(panelText);
         painter.drawText(badge_, Qt::AlignCenter, measurement_);
     }
@@ -485,8 +521,9 @@ private:
     const QImage image_;
     const QRectF layout_;
     const bool fit_;
-    const QString title_ = QStringLiteral("Drag to capture a region");
-    const QString help_ = QStringLiteral("Esc or right-click to cancel");
+    const QString instructionText_ = QStringLiteral("Drag to capture a region");
+    const QFont instructionFont_ = theme::font(13, theme::Weight::Semibold);
+    QRect instructions_;
     QPointF hover_{-1, -1};
     bool dragging_ = false;
     QRectF selection_;

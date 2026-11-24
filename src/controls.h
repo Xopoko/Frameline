@@ -7,7 +7,6 @@
 
 #include <functional>
 
-class QHBoxLayout;
 class QLabel;
 class QTimer;
 class QVariantAnimation;
@@ -39,8 +38,6 @@ public:
     void setLarge(bool large);
     // Shows only the icon; the label becomes the tooltip.
     void setCompact(bool compact);
-    // The parent draws the checked state, for example a selection that slides between buttons.
-    void setCheckedDrawnByParent(bool value);
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
@@ -63,7 +60,6 @@ private:
     qreal hover_ = 0;
     bool large_ = false;
     bool compact_ = false;
-    bool checkedDrawnByParent_ = false;
     bool keyboardFocus_ = false;
 };
 
@@ -114,28 +110,6 @@ private:
     QVariantAnimation *animation_;
     QRectF thumb_;
     int current_ = 0;
-};
-
-// A floating panel that sits above the content. Its layout already accounts for the shadow.
-class Island : public QWidget {
-    Q_OBJECT
-
-public:
-    explicit Island(QWidget *parent = nullptr);
-
-    static constexpr int shadowMargin = 12;
-
-    QHBoxLayout *row() const { return row_; }
-    void addSeparator();
-
-protected:
-    void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    // Painted between the panel background and its children.
-    virtual void paintPanel(QPainter &) {}
-
-private:
-    QHBoxLayout *row_;
 };
 
 // A toast: a pill that confirms an action and fades out.

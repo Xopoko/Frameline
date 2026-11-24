@@ -430,9 +430,10 @@ void regionDemo(const QString &directory)
     record.hold(*overlay, 3);
     QTest::mousePress(overlay, Qt::LeftButton, {}, demoSelection.topLeft());
     QEasingCurve curve(QEasingCurve::InOutCubic);
+    const QPoint dragDistance(demoSelection.width(), demoSelection.height());
     for (int i = 1; i <= 22; ++i) {
         const qreal t = curve.valueForProgress(i / 22.0);
-        record.pointer = demoSelection.topLeft() + (demoSelection.bottomRight() - demoSelection.topLeft()) * t;
+        record.pointer = demoSelection.topLeft() + dragDistance * t;
         QTest::mouseMove(overlay, record.pointer);
         QTest::qWait(30);
         record.frame(*overlay);

@@ -39,8 +39,8 @@ struct Palette {
 
 const Palette &colors();
 
-// The accent of the region overlay, which sits on arbitrary screen content and ignores the theme.
-inline const QColor overlayAccent{0x5f, 0xe3, 0xb5};
+// The accent for guides drawn over arbitrary image content.
+inline const QColor overlayAccent{0xa7, 0xb2, 0xff};
 
 inline constexpr int radius = 8;
 inline constexpr int controlHeight = 32;

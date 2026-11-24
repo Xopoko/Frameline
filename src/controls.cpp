@@ -222,12 +222,6 @@ void Button::setCompact(bool compact)
     update();
 }
 
-void Button::setCheckedDrawnByParent(bool value)
-{
-    checkedDrawnByParent_ = value;
-    update();
-}
-
 bool Button::showsLabel() const
 {
     return !text().isEmpty() && (!compact_ || icon_ == Icon::None);
@@ -264,7 +258,6 @@ void Button::paintEvent(QPaintEvent *)
         painter.setOpacity(0.38);
     }
     const QRectF frame = QRectF(rect());
-    const bool checkedHere = isChecked() && !checkedDrawnByParent_;
     QColor fill;
     QColor foreground;
     switch (kind_) {
@@ -283,8 +276,8 @@ void Button::paintEvent(QPaintEvent *)
         foreground = c.text;
         break;
     case Ghost:
-        fill = theme::withAlpha(c.controlHover, hover_ * (checkedHere ? 0.5 : 1));
-        if (checkedHere) {
+        fill = theme::withAlpha(c.controlHover, hover_);
+        if (isChecked()) {
             fill = theme::mix(c.accentSoft, theme::withAlpha(c.accent, 0.26), hover_);
         }
         if (isDown()) {
@@ -542,39 +535,6 @@ void Segmented::paintEvent(QPaintEvent *)
     if (hasFocus()) {
         theme::paintFocusRing(painter, QRectF(rect()), theme::radius);
     }
-}
-
-// MARK: Island
-
-Island::Island(QWidget *parent) : QWidget(parent), row_(new QHBoxLayout(this))
-{
-    constexpr int inset = shadowMargin + 6;
-    row_->setContentsMargins(inset, inset, inset, inset);
-    row_->setSpacing(2);
-    row_->setSizeConstraint(QLayout::SetFixedSize);
-}
-
-void Island::addSeparator()
-{
-    row_->addWidget(new Separator(this));
-}
-
-void Island::paintEvent(QPaintEvent *)
-{
-    const theme::Palette &c = theme::colors();
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-    const QRectF body = QRectF(rect()).adjusted(shadowMargin, shadowMargin, -shadowMargin, -shadowMargin);
-    theme::paintShadow(painter, body, 14, 10, 3, c.dark ? 1.4 : 1);
-    painter.setPen(QPen(c.dark ? c.border : theme::withAlpha(c.borderStrong, 0.6), 1));
-    painter.setBrush(c.raised);
-    painter.drawRoundedRect(body.adjusted(0.5, 0.5, -0.5, -0.5), 14, 14);
-    paintPanel(painter);
-}
-
-void Island::mousePressEvent(QMouseEvent *event)
-{
-    event->accept();
 }
 
 // MARK: Notice
