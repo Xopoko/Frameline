@@ -140,9 +140,11 @@ void FreezeCutTests::welcomeNavigation()
 
     next->click();
     QCOMPARE(next->text(), QStringLiteral("Try a capture"));
+    QCOMPARE(next->accessibleName(), next->text());
     QVERIFY(back->isVisible());
     back->click();
     QCOMPARE(next->text(), QStringLiteral("Continue"));
+    QCOMPARE(next->accessibleName(), next->text());
     QVERIFY(finished.isEmpty());
 
     next->click();

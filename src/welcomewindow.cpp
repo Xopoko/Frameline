@@ -351,6 +351,7 @@ void WelcomeWindow::showStep(int step)
                                  : QStringLiteral("Mark it up, copy the result, or reopen the original in Library."));
     back_->setVisible(!capture);
     next_->setText(capture ? QStringLiteral("Continue") : QStringLiteral("Try a capture"));
+    next_->setAccessibleName(next_->text());
     if (isVisible()) {
         preview_->showStep(step);
         next_->setFocus(Qt::OtherFocusReason);
