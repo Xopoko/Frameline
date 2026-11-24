@@ -147,7 +147,7 @@ try {
     }
 
     $gif = Join-Path $scratch 'demo.gif'
-    $filters = '[0:v]split[video][palette_input];[palette_input]palettegen=stats_mode=diff[palette];[video][palette]paletteuse=dither=sierra2_4a:diff_mode=rectangle'
+    $filters = '[0:v]split[video][palette_input];[palette_input]palettegen=stats_mode=diff[palette];[video][palette]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle'
     & $ffmpeg -hide_banner -loglevel error -framerate $frameRate -start_number 0 -i (Join-Path $scratch '%04d.png') -filter_complex $filters -loop 0 $gif
     if ($LASTEXITCODE -ne 0) {
         throw "FFmpeg could not encode the demo (exit $LASTEXITCODE)."
