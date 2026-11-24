@@ -135,7 +135,12 @@ FreezeCutApplication::FreezeCutApplication(LaunchOptions options)
             captureAfterHiding(true);
             return;
         }
-        if (!region_ || frames.isEmpty()) {
+        bool selectRegion = region_;
+#ifdef FREEZECUT_LINUX_SNAP
+        // The system picker already chose what to capture.
+        selectRegion = selectRegion && !interactivePortalCapture_;
+#endif
+        if (!selectRegion || frames.isEmpty()) {
             finishCapture(frames.isEmpty() ? QImage{} : frames.first().image);
             return;
         }
@@ -522,6 +527,9 @@ void FreezeCutApplication::beginCapture(bool region, bool fromTrayMenu)
     busy_ = true;
     region_ = region;
     portalAuthorizationAttempted_ = false;
+#ifdef FREEZECUT_LINUX_SNAP
+    interactivePortalCapture_ = false;
+#endif
     restoreEditor_ = editor_ && editor_->isVisible();
     restoreLibrary_ = library_ && library_->isVisible() && !library_->isMinimized();
     if (editor_ && editor_->hasUnsavedChanges()) {
@@ -678,6 +686,15 @@ void FreezeCutApplication::failCapture(const QString &message)
 
 void FreezeCutApplication::requestPortalPermission(const QString &message)
 {
+#ifdef FREEZECUT_LINUX_SNAP
+    // GNOME may refuse the passive access dialog when the Snap's portal identity
+    // differs from its desktop file. The system picker grants access per capture.
+    if (std::exchange(interactivePortalCapture_, true)) {
+        failCapture(message);
+        return;
+    }
+    capture_.capture(region_, nullptr, true);
+#else
     if (!options_.preview || std::exchange(portalAuthorizationAttempted_, true)) {
         failCapture(message);
         return;
@@ -700,6 +717,7 @@ void FreezeCutApplication::requestPortalPermission(const QString &message)
 
     portalAuthorizing_ = true;
     QTimer::singleShot(compositorDelayMs, this, [this] { capture_.capture(region_, editor_.get()); });
+#endif
 }
 
 void FreezeCutApplication::restoreWindows()

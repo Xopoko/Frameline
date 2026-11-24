@@ -89,13 +89,15 @@ bool ScreenCapture::usesScreenshotPortal()
 #endif
 }
 
-void ScreenCapture::capture(bool region, QWidget *portalParent)
+void ScreenCapture::capture(bool region, QWidget *portalParent, bool interactivePortal)
 {
 #if defined(Q_OS_LINUX)
     if (usesScreenshotPortal()) {
         auto *request = new Portal::Request(this);
         const auto message = QStringLiteral("Wayland did not provide a screenshot. Check screen capture permissions in system settings.");
-        const auto responseFailure = portalParent
+        const auto responseFailure = interactivePortal
+            ? QStringLiteral("The system screenshot picker did not return a screenshot.")
+            : portalParent
             ? QStringLiteral("Wayland denied screen capture. Allow FreezeCut to capture the screen in system settings and try again.")
             : QStringLiteral("Wayland denied screen capture. On the first run, try again from the active FreezeCut window.");
         connect(request, &Portal::Request::failed, this, [this, message] { emit failed(message); });
@@ -129,11 +131,12 @@ void ScreenCapture::capture(bool region, QWidget *portalParent)
             windowId = QStringLiteral("x11:") + QString::number(portalParent->winId(), 16);
         request->start(QStringLiteral("org.freedesktop.portal.Screenshot"),
                        QStringLiteral("Screenshot"), {windowId},
-                       {{QStringLiteral("interactive"), false}});
+                       {{QStringLiteral("interactive"), interactivePortal}});
         return;
     }
 #else
     Q_UNUSED(portalParent);
+    Q_UNUSED(interactivePortal);
 #endif
 
     auto *activeScreen = QGuiApplication::screenAt(QCursor::pos());

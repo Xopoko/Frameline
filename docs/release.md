@@ -33,7 +33,7 @@ Build from a clean Linux checkout with Snapcraft and the Core 24 build environme
 docker run --rm -e SNAPCRAFT_BUILD_INFO=1 -v "$PWD:/project" ghcr.io/canonical/snapcraft:8_core24 pack
 ```
 
-Test the exact package with strict confinement on a clean Ubuntu desktop. Verify the Wayland screenshot prompt and region selector, the GNOME shortcut, PNG export and clipboard copy, Library persistence and startup from a new login. On GNOME versions without a Global Shortcuts portal, add `snap run freezecut capture region` as a custom shortcut in Settings → Keyboard. Use `snap run freezecut capture full` for the full-screen shortcut.
+Test the exact package with strict confinement on a clean Ubuntu desktop. Verify the Wayland screenshot prompt and region selector, the GNOME shortcut, PNG export and clipboard copy, Library persistence and startup from a new login. When GNOME displays its own screenshot picker, choose an area or screen there and confirm the capture. FreezeCut opens the resulting image for annotation. On GNOME versions without a Global Shortcuts portal, add `snap run freezecut capture region` as a custom shortcut in Settings → Keyboard. Use `snap run freezecut capture full` for the full-screen shortcut.
 
 The snap keeps its Library in `~/snap/freezecut/common/.frameline/` across revisions. Use the DEB build for SSH or Tailscale library connections. To bring over the local history from a DEB install, quit both versions after installing the snap and copy the existing history without replacing Snap captures.
 

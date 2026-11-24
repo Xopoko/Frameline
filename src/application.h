@@ -98,5 +98,8 @@ private:
     bool libraryFlushFailed_ = false;
     bool portalAuthorizationAttempted_ = false;
     bool portalAuthorizing_ = false;
+#ifdef FREEZECUT_LINUX_SNAP
+    bool interactivePortalCapture_ = false;
+#endif
     bool restoreLibraryAfterSettings_ = false;
 };

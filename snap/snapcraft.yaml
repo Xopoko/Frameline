@@ -4,15 +4,16 @@ base: core24
 adopt-info: freezecut
 summary: Capture and annotate screenshots
 description: |
-  Freeze the screen and select a region, or capture the full screen. Mark up
-  screenshots with arrows, shapes, blur or redaction, then copy them or save
-  a PNG. Reopen originals in the local Library without an account.
+  Capture a region or the whole screen. On Wayland, your desktop may ask you
+  to choose what to capture. Mark up screenshots with arrows, shapes, blur or
+  redaction, then copy them or save a PNG. Reopen originals in the local
+  Library without an account.
 grade: stable
 confinement: strict
 license: MIT
 icon: resources/FreezeCut.png
 website: https://github.com/Xopoko/FreezeCut
-source-code: https://github.com/Xopoko/FreezeCut/releases/tag/v0.5.0-snap-store.1
+source-code: https://github.com/Xopoko/FreezeCut/releases/tag/v0.5.0-snap-store.2
 issues: https://github.com/Xopoko/FreezeCut/issues
 contact: https://github.com/Xopoko/FreezeCut/issues
 
@@ -140,7 +141,8 @@ parts:
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_PREFIX_PATH="$CRAFT_STAGE/opt/qt6" \
         -DCMAKE_INSTALL_PREFIX=/usr \
-        -DFREEZECUT_LINUX_SNAP=ON
+        -DFREEZECUT_LINUX_SNAP=ON \
+        -DFREEZECUT_SNAP_BUILD_NUMBER=2
       cmake --build app-build --parallel 12
       ctest --test-dir app-build --output-on-failure
       DESTDIR="$CRAFT_PART_INSTALL" cmake --install app-build
