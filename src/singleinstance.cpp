@@ -233,6 +233,10 @@ void SingleInstance::readRequest(QLocalSocket *socket)
     disconnect(socket, nullptr, this, nullptr);
     // Let the client close after reading the reply. Closing a Windows pipe here can discard unread bytes.
     socket->write(&acknowledged, 1);
-    if (*request != Request::Quiet)
-        emit activationRequested(*request);
+    if (*request != Request::Quiet) {
+        // A modal window can process the socket's disconnect before readyRead returns.
+        QMetaObject::invokeMethod(this, [this, pending = *request] {
+            emit activationRequested(pending);
+        }, Qt::QueuedConnection);
+    }
 }

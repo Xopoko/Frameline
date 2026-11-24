@@ -1,8 +1,10 @@
 #include "singleinstance.h"
 
+#include <QEventLoop>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 
 #include <chrono>
 #include <future>
@@ -12,6 +14,7 @@ class SingleInstanceTests final : public QObject {
 
 private slots:
     void forwardsOnlyVisibleLaunches();
+    void acknowledgesSettingsWhileDialogIsOpen();
     void reopensAfterPrimaryExits();
 };
 
@@ -35,10 +38,42 @@ void SingleInstanceTests::forwardsOnlyVisibleLaunches()
         QCOMPARE(forwarded.get(), SingleInstance::Result::Forwarded);
     }
 
-    QCOMPARE(requested.size(), 3);
+    QTRY_COMPARE(requested.size(), 3);
     QCOMPARE(requested.at(0).at(0).value<SingleInstance::Request>(), SingleInstance::Request::Editor);
     QCOMPARE(requested.at(1).at(0).value<SingleInstance::Request>(), SingleInstance::Request::Library);
     QCOMPARE(requested.at(2).at(0).value<SingleInstance::Request>(), SingleInstance::Request::Settings);
+}
+
+void SingleInstanceTests::acknowledgesSettingsWhileDialogIsOpen()
+{
+    const QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    SingleInstance primary(directory.path());
+    QCOMPARE(primary.start(SingleInstance::Request::Quiet), SingleInstance::Result::Primary);
+
+    std::future<SingleInstance::Result> forwarded;
+    bool acknowledgedWhileOpen = false;
+    connect(&primary, &SingleInstance::activationRequested, this, [&](SingleInstance::Request request) {
+        QCOMPARE(request, SingleInstance::Request::Settings);
+        QEventLoop dialog;
+        QTimer completion;
+        connect(&completion, &QTimer::timeout, &dialog, [&] {
+            if (forwarded.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+                acknowledgedWhileOpen = true;
+                QTimer::singleShot(0, &dialog, &QEventLoop::quit);
+                completion.stop();
+            }
+        });
+        QTimer::singleShot(5000, &dialog, &QEventLoop::quit);
+        completion.start(10);
+        dialog.exec();
+    });
+    forwarded = std::async(std::launch::async, [path = directory.path()] {
+        SingleInstance secondary(path);
+        return secondary.start(SingleInstance::Request::Settings);
+    });
+    QTRY_VERIFY(acknowledgedWhileOpen);
+    QCOMPARE(forwarded.get(), SingleInstance::Result::Forwarded);
 }
 
 void SingleInstanceTests::reopensAfterPrimaryExits()
