@@ -107,3 +107,5 @@ The DEB uses the Qt libraries from Ubuntu 24.04. Install Ubuntu's security updat
 ## Before making a release public
 
 Review Git history, package contents, and screenshots for private information. Check the downloaded ZIP, DMG, and DEB on the target architectures and publish only the verified files and their checksums. Enable private vulnerability reporting before directing users to it. See [Security](../SECURITY.md).
+
+After publishing the GitHub release, point the Windows and macOS [README](../README.md) buttons to its ZIP and DMG and verify both downloads.

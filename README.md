@@ -11,8 +11,13 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Xopoko/FreezeCut/releases/download/v0.5.1/FreezeCut-0.5.1-windows-x64.zip"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/badge-windows-light.svg"><img src="docs/media/badge-windows-dark.svg" height="56" alt="Download FreezeCut for Windows x64 (ZIP)"></picture></a>
+  <a href="https://github.com/Xopoko/FreezeCut/releases/download/v0.5.1/FreezeCut-0.5.1-macOS-universal.dmg"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/badge-macos-light.svg"><img src="docs/media/badge-macos-dark.svg" height="56" alt="Download FreezeCut for macOS (universal DMG)"></picture></a>
+  <a href="https://snapcraft.io/freezecut"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/badge-ubuntu-light.svg"><img src="docs/media/badge-ubuntu-dark.svg" height="56" alt="Install FreezeCut on Ubuntu from the Snap Store"></picture></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/Xopoko/FreezeCut/actions/workflows/build.yml"><img src="https://github.com/Xopoko/FreezeCut/actions/workflows/build.yml/badge.svg" alt="Build and test"></a>
-  <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-5fe3b5?style=flat-square&labelColor=151a20" alt="Windows, macOS and Linux">
   <img src="https://img.shields.io/badge/Qt-6-5fe3b5?style=flat-square&labelColor=151a20" alt="Qt 6">
   <img src="https://img.shields.io/badge/C%2B%2B-20-5fe3b5?style=flat-square&labelColor=151a20" alt="C++20">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-5fe3b5?style=flat-square&labelColor=151a20" alt="MIT license"></a>
@@ -53,7 +58,7 @@
 
 ## Install
 
-Download the package for your system from [Releases](https://github.com/Xopoko/FreezeCut/releases).
+Download the package for your system from [Releases](https://github.com/Xopoko/FreezeCut/releases/latest). On Ubuntu you can also install FreezeCut from the [Snap Store](https://snapcraft.io/freezecut).
 
 Version 0.5.0 was released as Frameline. Its Windows launcher is `bin/FramelineGUI.exe`, its macOS app is `Frameline.app`, and its Ubuntu package is `frameline_0.5.0_amd64.deb`. Packages built from the current source use the following names.
 

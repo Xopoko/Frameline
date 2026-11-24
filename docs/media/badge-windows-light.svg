@@ -1,0 +1,10 @@
+<svg width="128" height="44" viewBox="0 0 128 44" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Download for Windows">
+  <title>Download for Windows</title>
+  <rect x="1" y="1" width="126" height="42" rx="4" fill="#FDFDFD"/>
+  <rect x="0.5" y="0.5" width="127" height="43" rx="4.5" stroke="black" stroke-opacity="0.1"/>
+  <path fill="#0078D4" d="M10 11h10v10H10zm11 0h10v10H21zM10 22h10v10H10zm11 0h10v10H21z"/>
+  <g fill="#000000" font-family="'Segoe UI Variable Text','Segoe UI',-apple-system,BlinkMacSystemFont,'Helvetica Neue',Helvetica,Arial,sans-serif">
+    <text x="39.5" y="17" font-size="10">Download for</text>
+    <text x="38.5" y="34" font-size="18" font-weight="600">Windows</text>
+  </g>
+</svg>
