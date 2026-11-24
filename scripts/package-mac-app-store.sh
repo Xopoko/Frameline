@@ -115,7 +115,10 @@ cp -- "$entitlements" "$signed_entitlements"
 sign_nested_code "${sign_code[@]}"
 "${sign_code[@]}" --entitlements "$signed_entitlements" "$bundle"
 codesign --verify --deep --strict "$bundle"
-codesign --display --verbose=4 --extract-certificates "$work/identity-" "$bundle" 2>"$work/signature"
+if ! codesign --display --verbose=4 "--extract-certificates=$work/identity-" "$bundle" 2>"$work/signature"; then
+    cat "$work/signature" >&2
+    fail "Could not inspect the app distribution signature."
+fi
 grep -Eq '^Authority=(Apple Distribution|3rd Party Mac Developer Application):' "$work/signature" \
     && grep -Fxq "TeamIdentifier=$team_id" "$work/signature" \
     || fail "Use the app distribution signing identity for the profile's Apple team."
