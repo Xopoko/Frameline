@@ -59,6 +59,7 @@ private:
     struct PreviewCapture {
         QString kind;
         QDateTime capturedAt;
+        QString id;
     };
 
     LaunchOptions options_;
@@ -66,6 +67,7 @@ private:
     QString settingsError_;
     ScreenCapture capture_;
     GlobalShortcuts shortcuts_;
+    std::unique_ptr<LibraryClient> history_;
     std::unique_ptr<LibraryClient> libraryClient_;
     std::unique_ptr<EditorWindow> editor_;
     std::unique_ptr<LibraryWindow> library_;
@@ -79,6 +81,8 @@ private:
     QString regionShortcut_;
     QString shortcutMessage_;
     QString libraryMessage_;
+    QString historyError_;
+    QString syncError_;
     QString hostedLibraryError_;
     QString hostedSharingError_;
     PreviewCapture previewCapture_;

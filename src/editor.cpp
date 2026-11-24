@@ -556,7 +556,7 @@ struct EditorWindow::Ui {
         screenButton->setAccessibleName(QStringLiteral("Capture the screen"));
         regionButton->setToolTip(regionButton->accessibleName());
         screenButton->setToolTip(screenButton->accessibleName());
-        libraryButton->setToolTip(QStringLiteral("Screenshots from all your devices"));
+        libraryButton->setToolTip(QStringLiteral("Browse screenshots"));
         row->addWidget(regionButton);
         row->addWidget(screenButton);
         row->addWidget(libraryButton);

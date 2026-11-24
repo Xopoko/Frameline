@@ -14,7 +14,7 @@ Everything except `main.cpp` is built into the `frameline_core` static library, 
 | `shortcuts` | Global hotkeys: `RegisterHotKey` and a low-level hook for `Win+S` (`platform/windows_shortcuts`), Carbon hotkeys on macOS, the GlobalShortcuts portal on Wayland, XCB grabs on X11. |
 | `settings`, `settingswindow` | `~/.frameline/settings.json`, library connection codes and the settings dialog. |
 | `platform/autostart` | Registers `--tray` at user login through Windows Run, a macOS LaunchAgent or XDG autostart on Linux. |
-| `libraryclient`, `librarywindow` | Upload queue, connection to the library and library browser. |
+| `libraryclient`, `librarystorage`, `librarywindow` | Local screenshot history, optional upload queue and shared library connection, and the library browser. |
 | `libraryserver` | Embedded library storage and API. |
 | `libraryprotocol` | The token, screenshot ID and size rules that the client, the embedded server and the settings share. |
 | `tailscale`, `tailrelay` | Detection of the private network and its addresses, and the relay that keeps library connections on it. |
@@ -28,9 +28,9 @@ Platform code sits behind `Q_OS_…` checks next to the feature it serves, or in
 
 ## Capturing
 
-`FramelineApplication::beginCapture` hides Frameline's windows, waits for the compositor where needed, and asks `ScreenCapture` for frames. A full capture goes straight to the editor; a region capture goes through `RegionSelector` first. The editor holds the image until it is closed or replaced. At that point, if archiving is on, the edited pixels are handed to the library client.
+`FramelineApplication::beginCapture` hides Frameline's windows, waits for the compositor where needed, and asks `ScreenCapture` for frames. A full capture goes straight to the editor. A region capture goes through `RegionSelector` first. Every successful capture is saved in `~/.frameline/history` as soon as it reaches the editor. The Library reads that folder directly and can also show captures from older libraries hosted on this computer. Local history keeps the original capture. If uploads are enabled, the edited pixels are queued when the editor is closed or replaced.
 
-`frameline capture … --no-preview` skips the editor and queues the capture immediately.
+`frameline capture … --no-preview` also saves local history. It queues the original immediately when uploads are enabled.
 
 ## Library queue
 

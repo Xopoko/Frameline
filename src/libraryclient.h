@@ -1,5 +1,6 @@
 #pragma once
 
+#include "librarystorage.h"
 #include "settings.h"
 
 #include <QDateTime>
@@ -10,15 +11,6 @@
 #include <functional>
 #include <memory>
 
-struct LibraryItem {
-    QString id;
-    QDateTime capturedAt;
-    QSize size;
-    QString device;
-    QString kind;
-    bool hasThumbnail = false;
-};
-
 class LibraryClient final : public QObject {
     Q_OBJECT
 
@@ -27,14 +19,17 @@ public:
     using ImageCallback = std::function<void(QImage, QString error)>;
 
     explicit LibraryClient(const LibrarySettings &settings, const QString &settingsDirectory = defaultSettingsDirectory());
+    LibraryClient(const QString &settingsDirectory, const QString &hostedDirectory);
     ~LibraryClient() override;
 
     bool isConfigured() const;
+    bool isLocalHistory() const;
+    void setHostedHistoryDirectory(const QString &directory);
     int pendingCount() const;
     void start();
     // A hosted library can still queue captures when it cannot listen.
     void setConnectionError(const QString &error);
-    void enqueue(QImage image, const QString &kind, const QDateTime &capturedAt);
+    QString enqueue(QImage image, const QString &kind, const QDateTime &capturedAt, const QString &id = {});
     bool flushPendingWrites();
     void list(const QString &cursor, QObject *context, ListCallback callback);
     void image(const QString &id, bool thumbnail, QObject *context, ImageCallback callback);

@@ -80,7 +80,9 @@ void copyScreenshotToClipboard(const QImage &image)
 FramelineApplication::FramelineApplication(LaunchOptions options)
     : options_(std::move(options))
 {
-    settings_ = loadSettings(defaultSettingsDirectory(), &settingsError_);
+    const QString directory = defaultSettingsDirectory();
+    settings_ = loadSettings(directory, &settingsError_);
+    history_ = std::make_unique<LibraryClient>(directory, settings_.hostedLibrary.directory);
     libraryServer_ = std::make_unique<LibraryServer>();
     tailscale_ = std::make_unique<TailscaleMonitor>();
     libraryServer_->setPeerAuthorizer([this](const QString &local, const QString &peer) {
@@ -91,8 +93,14 @@ FramelineApplication::FramelineApplication(LaunchOptions options)
             settingsWindow_->setTailscaleStatus(status);
     });
     connect(tailscale_.get(), &TailscaleMonitor::refreshed, this, [this] { refreshHostedSharing(); });
-    libraryClient_ = std::make_unique<LibraryClient>(settings_.library);
+    libraryClient_ = std::make_unique<LibraryClient>(settings_.library, directory);
     connectLibraryClient();
+    connect(history_.get(), &LibraryClient::syncStatusChanged, this, [this](int, const QString &error) {
+        if (historyError_ != error) {
+            historyError_ = error;
+            refreshLibraryStatus(libraryClient_->pendingCount(), syncError_);
+        }
+    });
     connect(qApp, &QApplication::aboutToQuit, this, [this] {
         archivePreview();
         flushLibrary();
@@ -140,7 +148,7 @@ bool FramelineApplication::isDesktop() const
 void FramelineApplication::start()
 {
     // The capture overlay can briefly be the last visible window. Closing the final editor
-    // should also give the local Library queue time to finish writing.
+    // should also give the Library time to save the capture.
     QApplication::setQuitOnLastWindowClosed(false);
     if (isDesktop()) {
         Autostart::moveFromScreenFrame();
@@ -151,6 +159,7 @@ void FramelineApplication::start()
         if (settings_.hostedLibrary.share)
             tailscale_->refresh();
     }
+    history_->start();
     libraryClient_->start();
     if (!hostedLibraryError_.isEmpty())
         refreshLibraryStatus(libraryClient_->pendingCount(), hostedLibraryError_);
@@ -273,7 +282,8 @@ void FramelineApplication::showLibrary()
         return;
     }
     if (!library_) {
-        library_ = std::make_unique<LibraryWindow>(*libraryClient_);
+        library_ = std::make_unique<LibraryWindow>(*history_, nullptr,
+                                                  libraryClient_->isConfigured() ? libraryClient_.get() : nullptr);
         connect(library_.get(), &LibraryWindow::settingsRequested, this, &FramelineApplication::showSettings,
                 Qt::QueuedConnection);
     }
@@ -399,6 +409,7 @@ void FramelineApplication::saveWindowSettings(AppSettings updated, bool autostar
     if (keepPreviewLocal)
         previewCapture_ = {};
     settings_ = updated;
+    history_->setHostedHistoryDirectory(settings_.hostedLibrary.directory);
     const bool hadSettingsError = !settingsError_.isEmpty() || !hostedLibraryError_.isEmpty();
     hostedLibraryError_.clear();
     settingsError_.clear();
@@ -420,7 +431,7 @@ void FramelineApplication::saveWindowSettings(AppSettings updated, bool autostar
         if (keepPreviewLocal) {
             if (!message.isEmpty())
                 message += QStringLiteral("\n\n");
-            message += QStringLiteral("The screenshot already open will stay local. Use Save PNG to keep a copy.");
+            message += QStringLiteral("The screenshot already open will stay in the local Library.");
         }
         QMessageBox::information(settingsWindow_.get(), QStringLiteral("Settings saved"), message);
     }
@@ -530,6 +541,7 @@ void FramelineApplication::finishCapture(QImage image)
 
     const QString kind = region_ ? QStringLiteral("region") : QStringLiteral("full");
     const QDateTime capturedAt = QDateTime::currentDateTimeUtc();
+    const QString historyId = history_->enqueue(image, kind, capturedAt);
     if (settings_.autoCopyScreenshot)
         copyScreenshotToClipboard(image);
 
@@ -545,7 +557,7 @@ void FramelineApplication::finishCapture(QImage image)
     }
 
     if (!options_.preview) {
-        libraryClient_->enqueue(std::move(image), kind, capturedAt);
+        libraryClient_->enqueue(std::move(image), kind, capturedAt, historyId);
         exitAfterLibrarySync();
         return;
     }
@@ -555,7 +567,7 @@ void FramelineApplication::finishCapture(QImage image)
     archivePreview();
     image.setDevicePixelRatio(1);
     editor().setCapture(image);
-    previewCapture_ = {kind, capturedAt};
+    previewCapture_ = {kind, capturedAt, historyId};
     showEditor();
     previewOpened_ = true;
     if (!outputError.isEmpty()) {
@@ -635,22 +647,26 @@ void FramelineApplication::archivePreview()
     }
     const auto capture = std::exchange(previewCapture_, {});
     if (editor_) {
-        libraryClient_->enqueue(editor_->currentImage(), capture.kind, capture.capturedAt);
+        libraryClient_->enqueue(editor_->currentImage(), capture.kind, capture.capturedAt, capture.id);
     }
 }
 
 bool FramelineApplication::flushLibrary()
 {
-    if (libraryClient_->flushPendingWrites()) {
+    const bool historySaved = history_->flushPendingWrites();
+    const bool queueSaved = libraryClient_->flushPendingWrites();
+    if (historySaved && queueSaved) {
         libraryFlushFailed_ = false;
         return true;
     }
-    const QString error = QStringLiteral("Could not save a screenshot to the local Library queue.");
+    const QString error = historySaved ? QStringLiteral("Could not save a screenshot to the upload queue.")
+                                       : QStringLiteral("Could not save a screenshot to the local Library.");
     if (!isDesktop() && !libraryFlushFailed_) {
         QTextStream(stderr) << error << Qt::endl;
     }
     libraryFlushFailed_ = true;
-    refreshLibraryStatus(libraryClient_->pendingCount(), error);
+    if (historySaved)
+        refreshLibraryStatus(libraryClient_->pendingCount(), error);
     return false;
 }
 
@@ -686,10 +702,12 @@ void FramelineApplication::exitAfterLibrarySync()
 
 void FramelineApplication::refreshLibraryStatus(int pending, const QString &error)
 {
-    const QString message = hostedLibraryError_.isEmpty() ? error : hostedLibraryError_;
+    syncError_ = error;
+    const QString message = !historyError_.isEmpty() ? historyError_
+        : hostedLibraryError_.isEmpty() ? syncError_ : hostedLibraryError_;
     if (message.isEmpty()) {
         libraryMessage_.clear();
-    } else if (pending > 0) {
+    } else if (pending > 0 && historyError_.isEmpty()) {
         libraryMessage_ = QStringLiteral("Library (%1 pending): %2").arg(pending).arg(message);
     } else {
         libraryMessage_ = QStringLiteral("Library: %1").arg(message);

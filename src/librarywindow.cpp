@@ -149,6 +149,7 @@ public:
     }
 
     void clearFailures() { failures.clear(); }
+    void clearThumbnails() { thumbnails.clear(); }
 
 private:
     QList<LibraryItem> items;
@@ -418,12 +419,11 @@ constexpr auto libraryRules = R"(
     QLabel#viewerTitle { font-size: 14px; font-weight: 600; }
 )";
 
-enum class StateAction { None, Setup, Retry };
-
 } // namespace
 
 struct LibraryWindow::Ui {
-    Ui(LibraryWindow &owner, LibraryClient &transport) : window(owner), client(transport)
+    Ui(LibraryWindow &owner, LibraryClient &primary, LibraryClient *shared)
+        : window(owner), primary(primary), shared(shared), client(&primary)
     {
         window.setWindowTitle(QStringLiteral("Library — Frameline"));
         window.setMinimumSize(560, 420);
@@ -462,15 +462,11 @@ struct LibraryWindow::Ui {
                 refresh();
             }
         });
-        QObject::connect(&client, &LibraryClient::libraryChanged, &context, [this] {
-            needsRefresh = true;
-            if (window.isVisible() && pages->currentWidget() == listPage) {
-                refreshTimer->start();
-            }
-        });
-        QObject::connect(&client, &LibraryClient::syncStatusChanged, &context,
-                         [this](int pending, const QString &error) { updateSync(pending, error); });
-        updateSync(client.pendingCount(), {});
+        connectClient(primary, primaryError);
+        if (shared) {
+            connectClient(*shared, sharedError);
+        }
+        updateSync(client->pendingCount(), {});
 
         addShortcut(QKeySequence(Qt::Key_Escape), [this] {
             if (pages->currentWidget() == viewerPage) {
@@ -480,7 +476,7 @@ struct LibraryWindow::Ui {
             }
         });
         addShortcut(QKeySequence::Refresh, [this] {
-            if (pages->currentWidget() == listPage && client.isConfigured()) {
+            if (pages->currentWidget() == listPage) {
                 refresh();
             }
         });
@@ -496,13 +492,16 @@ struct LibraryWindow::Ui {
     ~Ui() { grid->resized = {}; }
 
     LibraryWindow &window;
-    LibraryClient &client;
+    LibraryClient &primary;
+    LibraryClient *const shared;
+    LibraryClient *client;
+    QString primaryError;
+    QString sharedError;
     QStackedWidget *pages = nullptr;
     QWidget *listPage = nullptr;
     QWidget *viewerPage = nullptr;
     QStackedWidget *listContent = nullptr;
     EmptyState *listState = nullptr;
-    StateAction stateAction = StateAction::None;
     LibraryGrid *grid = nullptr;
     LibraryModel *model = nullptr;
     QLabel *listCaption = nullptr;
@@ -512,6 +511,7 @@ struct LibraryWindow::Ui {
     QTimer *thumbnailTimer = nullptr;
     QTimer *refreshTimer = nullptr;
     QSet<QString> pendingThumbnails;
+    quint64 sourceGeneration = 0;
     quint64 listGeneration = 0;
     bool needsRefresh = true;
     bool listing = false;
@@ -533,6 +533,44 @@ struct LibraryWindow::Ui {
     int openedRow = -1;
     quint64 viewerGeneration = 0;
     QObject context;
+
+    void connectClient(LibraryClient &source, QString &sourceError)
+    {
+        QObject::connect(&source, &LibraryClient::libraryChanged, &context, [this, &source] {
+            if (client == &source) {
+                needsRefresh = true;
+                if (window.isVisible() && pages->currentWidget() == listPage) {
+                    refreshTimer->start();
+                }
+            }
+        });
+        QObject::connect(&source, &LibraryClient::syncStatusChanged, &context,
+                         [this, &source, &sourceError](int pending, const QString &error) {
+            sourceError = error;
+            if (client == &source) {
+                updateSync(pending, error);
+            }
+        });
+    }
+
+    void setSource(LibraryClient &source)
+    {
+        if (client == &source) {
+            return;
+        }
+        client = &source;
+        ++sourceGeneration;
+        ++viewerGeneration;
+        thumbnailTimer->stop();
+        refreshTimer->stop();
+        listing = false;
+        nextCursor.clear();
+        pendingThumbnails.clear();
+        model->clearThumbnails();
+        model->replace({});
+        updateSync(source.pendingCount(), client == shared ? sharedError : primaryError);
+        refresh();
+    }
 
     void addShortcut(const QKeySequence &sequence, const std::function<void()> &handler, QWidget *scope = nullptr)
     {
@@ -556,6 +594,16 @@ struct LibraryWindow::Ui {
         header->setSpacing(4);
         header->addWidget(theme::label(QStringLiteral("Library"), "barTitle", bar));
         header->addSpacing(12);
+        if (shared) {
+            auto *source = new Segmented({QStringLiteral("This device"), QStringLiteral("Shared")}, bar);
+            source->setObjectName(QStringLiteral("librarySource"));
+            source->setAccessibleName(QStringLiteral("Screenshot source"));
+            header->addWidget(source);
+            header->addSpacing(8);
+            QObject::connect(source, &Segmented::currentChanged, &context, [this](int index) {
+                setSource(index == 0 ? primary : *shared);
+            });
+        }
         listCaption = theme::label({}, "caption", bar);
         header->addWidget(listCaption, 1);
         refreshButton = new Button(Button::Ghost, Icon::Refresh, {}, bar);
@@ -579,13 +627,7 @@ struct LibraryWindow::Ui {
         listState = new EmptyState(listContent);
         listState->setObjectName(QStringLiteral("stage"));
         listState->setAttribute(Qt::WA_StyledBackground);
-        QObject::connect(listState->action(), &QPushButton::clicked, &context, [this] {
-            if (stateAction == StateAction::Setup) {
-                emit window.settingsRequested();
-            } else if (stateAction == StateAction::Retry) {
-                refresh();
-            }
-        });
+        QObject::connect(listState->action(), &QPushButton::clicked, &context, [this] { refresh(); });
         listContent->addWidget(listState);
 
         grid = new LibraryGrid(listContent);
@@ -690,29 +732,15 @@ struct LibraryWindow::Ui {
         scheduleThumbnails();
     }
 
-    void setListState(Icon icon, const QString &title, const QString &details, StateAction action = StateAction::None)
+    void setListState(Icon icon, const QString &title, const QString &details, const QString &action = {})
     {
-        stateAction = action;
-        const QString label = action == StateAction::Setup ? QStringLiteral("Set up library")
-            : action == StateAction::Retry                 ? QStringLiteral("Try again")
-                                                           : QString();
-        listState->set(icon, title, details, label);
+        listState->set(icon, title, details, action);
         listContent->setCurrentWidget(listState);
     }
 
     void refresh()
     {
         model->clearFailures();
-        if (!client.isConfigured()) {
-            needsRefresh = true;
-            refreshButton->setEnabled(false);
-            listCaption->clear();
-            setListState(Icon::Library, QStringLiteral("Collect screenshots from all your devices"),
-                         QStringLiteral("Connect Frameline to a library you host. Screenshots from every connected "
-                                        "device appear here, ready to save again."),
-                         StateAction::Setup);
-            return;
-        }
         requestList({});
     }
 
@@ -732,12 +760,16 @@ struct LibraryWindow::Ui {
             setListState(Icon::Refresh, QStringLiteral("Loading screenshots…"), {});
             listCaption->clear();
         }
-        client.list(cursor, &context, [this, first](QList<LibraryItem> entries, QString next, QString error) {
+        const quint64 source = sourceGeneration;
+        client->list(cursor, &context, [this, first, source](QList<LibraryItem> entries, QString next, QString error) {
+            if (source != sourceGeneration) {
+                return;
+            }
             listing = false;
             refreshButton->setEnabled(true);
             if (!error.isEmpty()) {
                 if (model->rowCount() == 0) {
-                    setListState(Icon::Warning, QStringLiteral("Couldn’t reach the library"), error, StateAction::Retry);
+                    setListState(Icon::Warning, QStringLiteral("Couldn’t load screenshots"), error, QStringLiteral("Try again"));
                 } else {
                     listBanner->setMessage(error);
                 }
@@ -765,8 +797,11 @@ struct LibraryWindow::Ui {
                 }
             }
             if (model->rowCount() == 0) {
+                const QString details = client->isLocalHistory()
+                    ? QStringLiteral("Take a screenshot to see it here.")
+                    : QStringLiteral("Screenshots uploaded from connected devices appear here.");
                 setListState(Icon::Region, QStringLiteral("No screenshots yet"),
-                             QStringLiteral("Screenshots archived from any device connected to this library appear here."));
+                             details);
             } else {
                 listContent->setCurrentWidget(grid);
                 if (!grid->currentIndex().isValid()) {
@@ -837,7 +872,11 @@ struct LibraryWindow::Ui {
             const QString id = item.id;
             pendingThumbnails.insert(id);
             const quint64 generation = listGeneration;
-            client.image(id, true, &context, [this, id, row, generation](QImage image, QString error) {
+            const quint64 source = sourceGeneration;
+            client->image(id, true, &context, [this, id, row, generation, source](QImage image, QString error) {
+                if (source != sourceGeneration) {
+                    return;
+                }
                 pendingThumbnails.remove(id);
                 if (generation == listGeneration && row < model->rowCount() && model->at(row).id == id) {
                     if (error.isEmpty() && !image.isNull()) {
@@ -853,8 +892,9 @@ struct LibraryWindow::Ui {
 
     void updateSync(int pending, const QString &error)
     {
-        pendingUploads = pending;
-        syncBanner->setMessage(error.isEmpty() ? QString() : QStringLiteral("Uploads paused: %1").arg(error));
+        const bool local = client->isLocalHistory();
+        pendingUploads = local ? 0 : pending;
+        syncBanner->setMessage(local || error.isEmpty() ? error : QStringLiteral("Sync paused: %1").arg(error));
         updateCaption();
     }
 
@@ -919,7 +959,7 @@ struct LibraryWindow::Ui {
         saveButton->setEnabled(false);
         copyButton->setEnabled(false);
         zoomMode->setEnabled(false);
-        client.image(openedItem.id, false, &context, [this, generation](QImage image, QString error) {
+        client->image(openedItem.id, false, &context, [this, generation](QImage image, QString error) {
             if (generation != viewerGeneration) {
                 return;
             }
@@ -959,8 +999,8 @@ struct LibraryWindow::Ui {
     }
 };
 
-LibraryWindow::LibraryWindow(LibraryClient &client, QWidget *parent)
-    : QMainWindow(parent, Qt::Window), ui(std::make_unique<Ui>(*this, client))
+LibraryWindow::LibraryWindow(LibraryClient &client, QWidget *parent, LibraryClient *shared)
+    : QMainWindow(parent, Qt::Window), ui(std::make_unique<Ui>(*this, client, shared))
 {
 }
 

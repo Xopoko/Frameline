@@ -38,6 +38,8 @@ add_library(frameline_core STATIC
     src/libraryprotocol.h
     src/libraryserver.cpp
     src/libraryserver.h
+    src/librarystorage.cpp
+    src/librarystorage.h
     src/librarywindow.cpp
     src/librarywindow.h
     src/pngexport.cpp
@@ -177,7 +179,7 @@ if(BUILD_TESTING)
     target_link_libraries(frameline_shots PRIVATE frameline_core Qt6::Test)
     add_test(NAME frameline_components COMMAND frameline_tests)
     set_tests_properties(frameline_components PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-    foreach(component autostart librarysettings libraryserver singleinstance tailscale tailrelay settingswindow)
+    foreach(component autostart librarysettings libraryserver librarystorage singleinstance tailscale tailrelay settingswindow)
         add_executable(frameline_${component}_tests tests/${component}_tests.cpp)
         target_link_libraries(frameline_${component}_tests PRIVATE frameline_core Qt6::Test Qt6::Network)
         add_test(NAME frameline_${component} COMMAND frameline_${component}_tests)

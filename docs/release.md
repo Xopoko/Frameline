@@ -11,8 +11,8 @@ Build and test the release candidate from a clean checkout. The repository's **B
 Use a fresh profile and sample screenshots for these checks:
 
 1. Verify full-screen capture, region selection, save, copy, and keyboard navigation before configuring a library.
-2. Select **Create here → Create library** in **Settings → Shared library**. Capture and close a sample screenshot, open the library and check that it appears. Quit and reopen Frameline, then check that you can browse the same library.
-3. Connect from another computer signed in to the same Tailscale account, preferably from a different network. Enable **Access from other devices**, apply sharing, copy the code and use **Connect** on the other computer. Verify browsing and automatic upload. Disconnect Tailscale, confirm uploads stay queued, then reconnect and confirm they arrive. Turn sharing off and verify the library still works on its own computer.
+2. Capture a sample screenshot with **Sync across devices** set to **Local only** and open **Library** while the editor is still open. Check that the capture appears. Quit and reopen Frameline, then check that the capture is still available.
+3. Under **Settings → Sync across devices → Host here**, select **Create shared library**. Enable **Access from other devices**, apply sharing, copy the code and use **Connect** on another computer signed in to the same Tailscale account. Verify browsing and automatic upload in **Shared**. Disconnect Tailscale, check that local captures remain available and uploads wait in the queue, then reconnect and confirm they arrive. Turn sharing off and verify local history again.
 4. Enable **Start Frameline when I sign in**, sign out and back in, and verify Frameline starts in the tray and serves the library. Launch the app again and check that the running instance opens its window. Disable the setting and verify it stays off at the next login.
 5. Connect to a disposable standalone library over SSH and verify browsing and automatic upload. Confirm that upgrading preserves settings and queued captures, and that queued captures stay with their original library when you switch destinations.
 

@@ -11,7 +11,7 @@ class LibraryWindow final : public QMainWindow {
     Q_OBJECT
 
 public:
-    explicit LibraryWindow(LibraryClient &client, QWidget *parent = nullptr);
+    explicit LibraryWindow(LibraryClient &client, QWidget *parent = nullptr, LibraryClient *shared = nullptr);
     ~LibraryWindow() override;
 
 signals:

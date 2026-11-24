@@ -290,16 +290,17 @@ void settingsShots()
 
 void libraryShots(int port, const QString &token)
 {
+    QTemporaryDir directory;
+    LibraryClient history(directory.path(), {});
+    history.start();
     {
-        LibraryClient client(LibrarySettings{});
-        LibraryWindow library(client);
+        LibraryWindow library(history);
         present(library, QSize(980, 700));
         shoot(library, QStringLiteral("20-library-unconfigured"));
     }
     if (token.isEmpty()) {
         return;
     }
-    QTemporaryDir directory;
     AppSettings settings;
     settings.library.transport = LibraryTransport::Local;
     settings.library.port = port;
@@ -307,12 +308,18 @@ void libraryShots(int port, const QString &token)
     settings.library.device = QStringLiteral("Work laptop");
     settings.library.autoArchive = true;
     saveSettings(settings, directory.path());
+    const auto showShared = [](LibraryWindow &library) {
+        present(library, QSize(980, 700));
+        if (auto *source = library.findChild<Segmented *>(QStringLiteral("librarySource"))) {
+            source->setCurrent(1);
+        }
+        settle(1500);
+    };
     {
         LibraryClient client(settings.library, directory.path());
         client.start();
-        LibraryWindow library(client);
-        present(library, QSize(980, 700));
-        settle(1500);
+        LibraryWindow library(history, nullptr, &client);
+        showShared(library);
         shoot(library, QStringLiteral("21-library-grid"));
         if (auto *list = library.findChild<QListView *>()) {
             if (list->model() && list->model()->rowCount() > 1) {
@@ -330,9 +337,8 @@ void libraryShots(int port, const QString &token)
     saveSettings(settings, directory.path());
     LibraryClient client(settings.library, directory.path());
     client.start();
-    LibraryWindow library(client);
-    present(library, QSize(980, 700));
-    settle(1500);
+    LibraryWindow library(history, nullptr, &client);
+    showShared(library);
     shoot(library, QStringLiteral("24-library-unreachable"));
 }
 

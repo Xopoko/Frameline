@@ -85,7 +85,7 @@ void SettingsWindowTests::hostAndShare()
 
     mode->setCurrent(1);
     startup->setChecked(true);
-    auto *create = buttonWithText(window, QStringLiteral("Create library"));
+    auto *create = buttonWithText(window, QStringLiteral("Create shared library"));
     QVERIFY(create);
     QVERIFY(!copy->isVisible());
     create->click();

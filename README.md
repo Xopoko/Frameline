@@ -25,9 +25,9 @@
 ## Why Frameline
 
 - **One shortcut away.** Press `⌘⌥⇧2` or `Ctrl+Alt+Shift+2` in any app. The screen freezes, so menus and tooltips stay where they were while you drag.
-- **Markup that keeps secrets secret.** Redact paints a solid block over keys and passwords; Blur softens the rest. Arrows, pen and rectangles for everything else, with full undo.
+- **Markup before sharing.** Redact covers sensitive details in the edited image. Blur softens details. Annotate with arrows, pen or rectangles, with full undo.
 - **Native on every desktop.** C++ and Qt Widgets. Capture, edit and save without an account. It follows your system's light or dark appearance.
-- **Your screenshots, on your devices.** Create a library in Settings and connect other computers through Tailscale, or keep using an existing SSH library. Failed uploads wait in a local queue, and every connected device can browse the library.
+- **Automatic local history.** Open Library to find your captures on this device. You can also share screenshots across devices through Tailscale or an existing SSH library.
 - **Scriptable.** Capture from the command line or a desktop shortcut, straight to a PNG.
 
 ## A closer look
@@ -46,7 +46,7 @@
     <td><img src="docs/media/viewer.png" alt="Library viewer showing one screenshot full size"></td>
   </tr>
   <tr>
-    <td><strong>Every device, one library.</strong> Screenshots from all your machines, newest first, with the device and time on each.</td>
+    <td><strong>Find past captures.</strong> Browse your screenshots newest first, with the device and time on each.</td>
     <td><strong>Open, copy, save again.</strong> Step through with the arrow keys, view at actual size, copy to the clipboard.</td>
   </tr>
 </table>
@@ -101,21 +101,25 @@ python3 /usr/share/frameline/configure-gnome-shortcut.py install   # or: status,
 
 If the global shortcuts portal is missing, bind `frameline capture full` and `frameline capture region` as custom shortcuts in your desktop settings.
 
-## Shared library
+## Library
+
+Frameline saves the original of each new capture on this device and shows it in **Library**. Open it from the editor, the tray or `frameline library`.
+
+### Sync across devices
 
 <img src="docs/media/settings.png" width="340" align="right" alt="Frameline settings with a shared library ready and a copy connection code button">
 
-On the computer that will keep your screenshots, open **Settings → Shared library → Create here** and select **Create library**. Frameline creates the library and starts it. You can use it on that computer with Frameline alone.
+To share screenshots, open **Settings → Sync across devices → Host here** on the host computer and select **Create shared library**.
 
 To connect another computer, including over the internet:
 
 1. Install Tailscale on both computers and sign in with the same account. [Get Tailscale](https://tailscale.com/download)
 2. On the computer with the library, turn on **Access from other devices**, select **Apply sharing**, then **Copy connection code**. If Frameline has not detected Tailscale yet, select **Check Tailscale**.
-3. On the other computer, open **Settings → Shared library → Connect**, paste the code and select **Connect**. Frameline checks the connection before saving it. Keep the code private. It grants read and write access to your library.
+3. On the other computer, open **Settings → Sync across devices → Connect**, paste the code and select **Connect**. Frameline checks the connection before saving it. Keep the code private. It grants read and write access to your library.
 
 If the connection check fails, make sure the library computer is awake, Frameline is running, and both computers are connected to Tailscale with the same account. **Start Frameline when I sign in** brings the library back when you sign in on its computer.
 
-Turn on **Archive screenshots from this device** wherever you want automatic uploads. With archiving on, the final edited image is uploaded when you close the editor, take another capture or quit. Uploads that fail are kept locally and retried. Browse the library from the editor, the tray or `frameline library`.
+Enable **Upload screenshots from this device** for automatic uploads. Frameline uploads the final image when you close the editor, take another capture or quit. Failed uploads stay in the queue and retry. In Library, use **Shared** to browse the connected library.
 
 For a separately managed server, choose **Advanced** and see the [standalone server instructions](server/README.md).
 

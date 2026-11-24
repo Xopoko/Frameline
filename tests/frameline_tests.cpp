@@ -11,7 +11,9 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
 #include <QLineEdit>
+#include <QListView>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScopeGuard>
@@ -340,15 +342,39 @@ void FramelineTests::settingsDialog()
 
 void FramelineTests::standaloneLibrary()
 {
-    LibraryClient client(LibrarySettings{});
+    const QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    LibraryClient client(directory.path(), {});
     LibraryWindow window(client);
     window.show();
-    auto *setup = buttonWithText(window, QStringLiteral("Set up library"));
-    QVERIFY2(setup && setup->isVisible(), "An unconfigured Library must offer setup from the empty state.");
+    const auto hasEmptyState = [&window] {
+        for (const auto *label : window.findChildren<QLabel *>(QStringLiteral("emptyTitle"))) {
+            if (label->isVisible() && label->text() == QStringLiteral("No screenshots yet"))
+                return true;
+        }
+        return false;
+    };
+    QTRY_VERIFY(hasEmptyState());
+    QPushButton *settings = nullptr;
+    for (auto *button : window.findChildren<QPushButton *>()) {
+        if (button->accessibleName() == QStringLiteral("Settings")) {
+            settings = button;
+            break;
+        }
+    }
+    QVERIFY(settings && settings->isVisible());
     bool requested = false;
     connect(&window, &LibraryWindow::settingsRequested, &window, [&] { requested = true; });
-    setup->click();
-    QVERIFY2(requested, "Set up library must open the app's settings flow.");
+    settings->click();
+    QVERIFY(requested);
+
+    auto *grid = window.findChild<QListView *>();
+    QVERIFY(grid);
+    QImage image(16, 12, QImage::Format_RGB32);
+    image.fill(Qt::blue);
+    QVERIFY(!client.enqueue(image, QStringLiteral("full"), QDateTime::currentDateTimeUtc()).isEmpty());
+    QTRY_COMPARE(grid->model()->rowCount(), 1);
+    QVERIFY(grid->isVisible());
 }
 
 void FramelineTests::libraryRejectsStaleSettings()
@@ -460,7 +486,10 @@ void FramelineTests::captureCopiesImageToClipboard()
     sample.setStyleSheet(QStringLiteral("background: #246798;"));
     sample.showFullScreen();
 
+    const QDir history(home.filePath(QStringLiteral(".frameline/history")));
+    const auto entries = [&history] { return history.entryList(QDir::Dirs | QDir::NoDotAndDotDot); };
     for (bool enabled : {true, false}) {
+        const QStringList before = entries();
         if (!enabled) {
             AppSettings settings;
             settings.autoCopyScreenshot = false;
@@ -482,6 +511,14 @@ void FramelineTests::captureCopiesImageToClipboard()
                      captured.convertToFormat(QImage::Format_RGB32));
         else
             QCOMPARE(clipboard->text(), original);
+
+        QTRY_COMPARE(entries().size(), before.size() + 1);
+        auto added = entries();
+        for (const QString &id : before)
+            added.removeOne(id);
+        QCOMPARE(added.size(), 1);
+        const QImage archived(history.filePath(added.constFirst() + QStringLiteral("/image.png")));
+        QCOMPARE(archived.convertToFormat(QImage::Format_RGB32), captured.convertToFormat(QImage::Format_RGB32));
     }
 }
 #endif

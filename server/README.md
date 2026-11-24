@@ -1,6 +1,6 @@
 # Standalone Frameline library server
 
-For a library managed by the desktop app, use **Settings → Shared library → Create here**. This guide covers a separately managed Python server, including running it when the desktop app is closed. Each server keeps its own library files. [Set up the embedded library](../README.md#shared-library)
+To share screenshots from the desktop app, use **Settings → Sync across devices → Host here**. This guide covers a separately managed Python server, including running it when the desktop app is closed. Each server keeps its own library files. [Set up the embedded library](../README.md#sync-across-devices)
 
 ## Start a library
 
@@ -25,7 +25,7 @@ The server listens on `127.0.0.1:18745` by default. Use `--port` to change the l
 
 ## Connect a device
 
-Open **Settings → Shared library → Advanced** and choose **This computer** on the server host. On a different device, choose **Over SSH**. Set up your SSH key and host alias in your OpenSSH client first. For example, add an entry to `~/.ssh/config` and substitute your server's host and SSH user.
+Open **Settings → Sync across devices → Advanced** and choose **This computer** on the server host. On a different device, choose **Over SSH**. Set up your SSH key and host alias in your OpenSSH client first. For example, add an entry to `~/.ssh/config` and substitute your server's host and SSH user.
 
 ```sshconfig
 Host screenshots-server
@@ -33,7 +33,7 @@ Host screenshots-server
     User library-user
 ```
 
-Verify the host key when you connect for the first time. `ssh -o BatchMode=yes screenshots-server true` should then succeed without a prompt. The SSH server must allow local port forwarding. In Frameline, enter the same host alias, the library port (18745 by default), the token, and a device name. Select **Test connection** before saving. Turn on **Archive screenshots from this device** wherever you want automatic uploads.
+Verify the host key when you connect for the first time. `ssh -o BatchMode=yes screenshots-server true` should then succeed without a prompt. The SSH server must allow local port forwarding. In Frameline, enter the same host alias, the library port (18745 by default), the token, and a device name. Select **Test connection** before saving. Enable **Upload screenshots from this device** wherever you want automatic uploads.
 
 The shared bearer token grants read and write access to the library. Give it only to devices you trust. Screenshots stay on disk indefinitely. The server has no automatic retention policy or total storage quota.
 

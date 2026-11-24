@@ -327,19 +327,19 @@ struct SettingsWindow::Ui {
 
     void addLibrary(QVBoxLayout *column)
     {
-        column->addWidget(theme::label(QStringLiteral("Shared library"), "heading", page));
+        column->addWidget(theme::label(QStringLiteral("Sync across devices"), "heading", page));
         column->addSpacing(4);
-        column->addWidget(paragraph(QStringLiteral("Keep screenshots from your devices together on a computer you choose."),
+        column->addWidget(paragraph(QStringLiteral("Frameline saves screenshots on this device automatically."),
                                     "muted", page));
         column->addSpacing(14);
-        connection = new Segmented({QStringLiteral("Off"), QStringLiteral("Create here"),
+        connection = new Segmented({QStringLiteral("Local only"), QStringLiteral("Host here"),
                                     QStringLiteral("Connect"), QStringLiteral("Advanced")}, page);
         connection->setObjectName(QStringLiteral("libraryConnection"));
-        connection->setAccessibleName(QStringLiteral("Library connection"));
+        connection->setAccessibleName(QStringLiteral("Sync mode"));
         column->addWidget(connection);
         column->addSpacing(14);
-        hostOfflineNote = paragraph(QStringLiteral("Saving this choice will stop access to the library on this computer. "
-                                                   "Its screenshots will stay on disk."), "caption", page);
+        hostOfflineNote = paragraph(QStringLiteral("Saving this choice will stop hosting the shared library. "
+                                                   "Its screenshots stay on disk."), "caption", page);
         column->addWidget(hostOfflineNote);
         column->addWidget(makeHostDetails());
         column->addWidget(makeJoinDetails());
@@ -353,9 +353,9 @@ struct SettingsWindow::Ui {
         device->setPlaceholderText(QStringLiteral("Work laptop"));
         device->setMaxLength(48);
         fields->addRow(QStringLiteral("Device name"), device);
-        archive = new Toggle(QStringLiteral("Archive screenshots from this device"));
+        archive = new Toggle(QStringLiteral("Upload screenshots from this device"));
         archive->setObjectName(QStringLiteral("libraryArchive"));
-        archive->setToolTip(QStringLiteral("Adds the final screenshot to the library when you close it or take another."));
+        archive->setToolTip(QStringLiteral("Uploads the final screenshot when you close it or take another."));
         fields->addWidgetRow(archive);
         column->addWidget(fields);
 
@@ -409,8 +409,7 @@ struct SettingsWindow::Ui {
         auto *column = new QVBoxLayout(hostDetails);
         column->setContentsMargins(0, 0, 0, 12);
         column->setSpacing(8);
-        column->addWidget(paragraph(QStringLiteral("Screenshots are stored on this computer. "
-                                                   "Keep it on with Frameline running to reach them from other devices."),
+        column->addWidget(paragraph(QStringLiteral("Keep Frameline running here so connected devices can browse the shared library."),
                                     "caption", hostDetails));
         hostStatus = new StatusLine(hostDetails);
         column->addWidget(hostStatus);
@@ -679,8 +678,8 @@ struct SettingsWindow::Ui {
                 hostMessage = hostError;
                 severity = StatusLine::Error;
             } else if (hosting) {
-                hostMessage = readyCode.isEmpty() ? QStringLiteral("Library is ready on this computer.")
-                                                   : QStringLiteral("Library is ready to share.");
+                hostMessage = readyCode.isEmpty() ? QStringLiteral("Shared library is ready on this computer.")
+                                                   : QStringLiteral("Shared library is ready to connect.");
                 severity = StatusLine::Success;
             }
         }
@@ -690,9 +689,9 @@ struct SettingsWindow::Ui {
 
         QString action = QStringLiteral("Save");
         if (host && !saved.hostedLibrary.enabled) {
-            action = QStringLiteral("Create library");
+            action = QStringLiteral("Create shared library");
         } else if (host && !hosting) {
-            action = QStringLiteral("Start library");
+            action = QStringLiteral("Start hosting");
         } else if (host && share->isChecked() != saved.hostedLibrary.share) {
             action = QStringLiteral("Apply sharing");
         } else if (join && (savedMode() != Connect || code->text().trimmed() != libraryConnectionCode(saved.library))) {

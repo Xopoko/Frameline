@@ -2,13 +2,13 @@
 
 #include "libraryprotocol.h"
 #include "libraryserver.h"
-#include "pngexport.h"
 #include "tailrelay.h"
 #include "tailscale.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QFutureWatcher>
 #include <QHostAddress>
 #include <QJsonArray>
@@ -20,10 +20,8 @@
 #include <QNetworkReply>
 #include <QPointer>
 #include <QProcess>
-#include <QSaveFile>
 #include <QSet>
 #include <QTcpServer>
-#include <QTemporaryDir>
 #include <QThreadPool>
 #include <QTimer>
 #include <QUrlQuery>
@@ -42,45 +40,6 @@ using LibraryProtocol::isScreenshotId;
 
 // The remote end of the SSH tunnel prints this line once the forwarded port is ready.
 constexpr auto readyMarker = "frameline-ready";
-
-bool writeBytes(const QString &path, const QByteArray &bytes)
-{
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly))
-        return false;
-    file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-    return file.write(bytes) == bytes.size() && file.commit();
-}
-
-QString stageCapture(const QString &queue, const QString &id, const QImage &image, const QJsonObject &metadata)
-{
-    if (!LibraryProtocol::isImageSize(image.size()))
-        return QStringLiteral("The screenshot is too large for the shared library.");
-    if (!QDir().mkpath(queue))
-        return QStringLiteral("Could not create the local screenshot queue.");
-#ifndef Q_OS_WIN
-    if (!QFile::setPermissions(queue, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner))
-        return QStringLiteral("Could not make the local screenshot queue private.");
-#endif
-    QTemporaryDir staging(QDir(queue).filePath(QStringLiteral(".staging-XXXXXX")));
-    if (!staging.isValid())
-        return QStringLiteral("Could not create a local staging folder for the screenshot.");
-    QString error;
-    const QString original = staging.filePath(QStringLiteral("image.png"));
-    if (!savePng(image, original, &error))
-        return QStringLiteral("Could not queue the screenshot. %1").arg(error);
-    if (QFileInfo(original).size() > LibraryProtocol::maxImageBytes)
-        return QStringLiteral("The encoded screenshot exceeds the library's 64 MiB limit.");
-
-    const QImage thumb = image.width() > 360 || image.height() > 240
-        ? image.scaled(360, 240, Qt::KeepAspectRatio, Qt::SmoothTransformation) : image;
-    if (!savePng(thumb, staging.filePath(QStringLiteral("thumbnail.png")), &error)
-        || !writeBytes(staging.filePath(QStringLiteral("metadata.json")), QJsonDocument(metadata).toJson(QJsonDocument::Compact)))
-        return QStringLiteral("Could not save the screenshot metadata or preview. %1").arg(error);
-    if (!QDir().rename(staging.path(), QDir(queue).filePath(id)))
-        return QStringLiteral("Could not add the screenshot to the local queue.");
-    return {};
-}
 
 QString responseError(QNetworkReply *reply)
 {
@@ -112,17 +71,24 @@ QString sshProgram()
 } // namespace
 
 struct LibraryClient::State : QObject {
-    State(LibraryClient &owner, const LibrarySettings &settings, const QString &directory)
+    State(LibraryClient &owner, const LibrarySettings &settings, const QString &directory, bool localHistory = false)
         : owner(owner),
-          settingsDirectory(directory), storageKey(settings.storageKey()),
-          queue(libraryQueueDirectory(settings, settingsDirectory)),
+          settingsDirectory(directory), localHistory(localHistory), storageKey(settings.storageKey()),
+          queue(localHistory ? QDir(directory).filePath(QStringLiteral("history"))
+                             : libraryQueueDirectory(settings, settingsDirectory)),
           transport(settings.transport), peer(QHostAddress(settings.address).toString()),
           host(settings.transport == LibraryTransport::Ssh ? settings.sshHost : QString{}),
-          port(settings.port), device(settings.device),
+          port(settings.port), device(localHistory ? defaultLibraryDeviceName() : settings.device),
           token(settings.isConfigured() ? settings.token.toLatin1() : QByteArray{}),
           autoArchive(settings.autoArchive)
     {
         network.setProxy(QNetworkProxy::NoProxy);
+        if (localHistory) {
+            connect(&historyWatcher, &QFileSystemWatcher::directoryChanged, this, [this] {
+                watchHistory();
+                emit this->owner.libraryChanged();
+            });
+        }
         if (transport == LibraryTransport::Local && !token.isEmpty()) {
             const auto hosted = loadSettings(settingsDirectory).hostedLibrary;
             forHostedLibrary = hosted.token.toLatin1() == token && hosted.port == port;
@@ -192,13 +158,54 @@ struct LibraryClient::State : QObject {
         return entries;
     }
 
+    QStringList historyDirectories() const
+    {
+        QStringList directories{queue, defaultHostedLibraryDirectory(settingsDirectory)};
+        const QDir profile(settingsDirectory);
+        if (profile.dirName() == QStringLiteral(".frameline")) {
+            directories.append(QDir::cleanPath(profile.filePath(QStringLiteral("../.screenframe/library"))));
+        }
+        if (!hostedHistoryDirectory.isEmpty())
+            directories.append(hostedHistoryDirectory);
+        directories.removeDuplicates();
+        return directories;
+    }
+
+    void watchHistory()
+    {
+        QStringList paths;
+        for (const QString &directory : historyDirectories()) {
+            QFileInfo entry(directory);
+            if (directory == queue) {
+                // A different process may still be creating the history folder.
+                while (!entry.isDir() && entry.absoluteFilePath() != entry.absolutePath())
+                    entry = QFileInfo(entry.absolutePath());
+            }
+            if (entry.isDir())
+                paths.append(entry.absoluteFilePath());
+        }
+        const auto watched = historyWatcher.directories();
+        for (const QString &path : watched) {
+            if (!paths.contains(path))
+                historyWatcher.removePath(path);
+        }
+        for (const QString &path : paths) {
+            if (!watched.contains(path))
+                historyWatcher.addPath(path);
+        }
+    }
+
     int pending() const
     {
+        if (localHistory)
+            return static_cast<int>(writes.size());
         return archivingAllowed() ? static_cast<int>(writes.size() + queuedIds().size()) : 0;
     }
 
     bool archivingAllowed() const
     {
+        if (localHistory)
+            return true;
         if (!autoArchive || storageKey.isEmpty())
             return false;
         // The tray and CLI can be running at the same time with different settings snapshots.
@@ -232,7 +239,8 @@ struct LibraryClient::State : QObject {
             else if (!retry.isActive())
                 retry.start(15000);
         });
-        watcher->setFuture(QtConcurrent::run(&writer, stageCapture, queue, write.id, write.image, write.metadata));
+        watcher->setFuture(QtConcurrent::run(&writer, LibraryStorage::writeCapture, queue, write.id, write.image,
+                                             write.metadata, !localHistory));
     }
 
     bool finishWrite(QFutureWatcher<QString> *watcher)
@@ -253,6 +261,8 @@ struct LibraryClient::State : QObject {
         if (std::none_of(writes.cbegin(), writes.cend(), [](const Write &write) { return write.failed; }))
             writeError.clear();
         status();
+        if (localHistory && error.isEmpty())
+            emit owner.libraryChanged();
         return error.isEmpty();
     }
 
@@ -495,6 +505,8 @@ struct LibraryClient::State : QObject {
             if (write.failed)
                 stage(write);
         }
+        if (localHistory)
+            return;
         const auto ids = queuedIds();
         if (ids.isEmpty()) {
             uploadError.clear();
@@ -599,6 +611,7 @@ struct LibraryClient::State : QObject {
 
     LibraryClient &owner;
     const QString settingsDirectory;
+    const bool localHistory;
     const QString storageKey;
     const QString queue;
     const LibraryTransport transport;
@@ -610,6 +623,8 @@ struct LibraryClient::State : QObject {
     const bool autoArchive;
     // This client was created for the library that Frameline hosts on this computer.
     bool forHostedLibrary = false;
+    QString hostedHistoryDirectory;
+    QFileSystemWatcher historyWatcher;
     QThreadPool writer;
     QList<Write> writes;
     QNetworkAccessManager network;
@@ -634,13 +649,32 @@ struct LibraryClient::State : QObject {
 
 LibraryClient::LibraryClient(const LibrarySettings &settings, const QString &settingsDirectory)
     : d(std::make_unique<State>(*this, settings, settingsDirectory)) {}
+LibraryClient::LibraryClient(const QString &settingsDirectory, const QString &hostedDirectory)
+    : d(std::make_unique<State>(*this, LibrarySettings{}, settingsDirectory, true))
+{
+    d->hostedHistoryDirectory = hostedDirectory;
+}
 LibraryClient::~LibraryClient() = default;
 
-bool LibraryClient::isConfigured() const { return !d->token.isEmpty(); }
+bool LibraryClient::isConfigured() const { return isLocalHistory() || !d->token.isEmpty(); }
+bool LibraryClient::isLocalHistory() const { return d->localHistory; }
 int LibraryClient::pendingCount() const { return d->pending(); }
+
+void LibraryClient::setHostedHistoryDirectory(const QString &directory)
+{
+    if (!isLocalHistory() || d->hostedHistoryDirectory == directory)
+        return;
+    d->hostedHistoryDirectory = directory;
+    d->watchHistory();
+    emit libraryChanged();
+}
 
 void LibraryClient::start()
 {
+    if (isLocalHistory()) {
+        d->watchHistory();
+        return;
+    }
     if (d->tailscale)
         QTimer::singleShot(0, d->tailscale.get(), &TailscaleMonitor::refresh);
     if (isConfigured() && d->autoArchive) {
@@ -674,22 +708,36 @@ void LibraryClient::setConnectionError(const QString &error)
     d->status();
 }
 
-void LibraryClient::enqueue(QImage image, const QString &kind, const QDateTime &capturedAt)
+QString LibraryClient::enqueue(QImage image, const QString &kind, const QDateTime &capturedAt, const QString &id)
 {
     if (image.isNull() || !d->archivingAllowed())
-        return;
+        return {};
+    const QString captureId = id.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces) : id;
     const QJsonObject metadata{{QStringLiteral("capturedAt"), capturedAt.toUTC().toString(Qt::ISODateWithMs)},
                                {QStringLiteral("device"), d->device}, {QStringLiteral("kind"), kind},
                                {QStringLiteral("width"), image.width()}, {QStringLiteral("height"), image.height()}};
-    d->writes.append({QUuid::createUuid().toString(QUuid::WithoutBraces), std::move(image), metadata});
+    d->writes.append({captureId, std::move(image), metadata});
     d->stage(d->writes.last());
     d->status();
+    return captureId;
 }
 
 bool LibraryClient::flushPendingWrites() { return d->flush(); }
 
 void LibraryClient::list(const QString &cursor, QObject *context, ListCallback callback)
 {
+    if (isLocalHistory()) {
+        auto *watcher = new QFutureWatcher<LibraryStorage::Page>(d.get());
+        const QPointer<QObject> guard(context);
+        connect(watcher, &QFutureWatcher<LibraryStorage::Page>::finished, d.get(), [watcher, guard, callback] {
+            auto page = watcher->result();
+            watcher->deleteLater();
+            if (guard)
+                callback(std::move(page.items), std::move(page.nextCursor), std::move(page.error));
+        });
+        watcher->setFuture(QtConcurrent::run(LibraryStorage::list, d->historyDirectories(), cursor));
+        return;
+    }
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("limit"), QStringLiteral("50"));
     if (!cursor.isEmpty())
@@ -727,6 +775,17 @@ void LibraryClient::image(const QString &id, bool thumbnail, QObject *context, I
         return;
     }
     const QPointer<QObject> guard(context);
+    if (isLocalHistory()) {
+        auto *watcher = new QFutureWatcher<LibraryStorage::Image>(d.get());
+        connect(watcher, &QFutureWatcher<LibraryStorage::Image>::finished, d.get(), [watcher, guard, callback] {
+            auto result = watcher->result();
+            watcher->deleteLater();
+            if (guard)
+                callback(std::move(result.image), std::move(result.error));
+        });
+        watcher->setFuture(QtConcurrent::run(LibraryStorage::image, d->historyDirectories(), id, thumbnail));
+        return;
+    }
     const QString part = thumbnail ? QStringLiteral("thumbnail") : QStringLiteral("image");
     const qint64 limit = thumbnail ? LibraryProtocol::maxThumbnailBytes : LibraryProtocol::maxImageBytes;
     d->download(QStringLiteral("/v1/screenshots/%1/%2").arg(id, part), {}, limit, context,
