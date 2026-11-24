@@ -13,7 +13,7 @@ confinement: strict
 license: MIT
 icon: resources/FreezeCut.png
 website: https://github.com/Xopoko/FreezeCut
-source-code: https://github.com/Xopoko/FreezeCut/releases/tag/v0.5.0-snap-store.2
+source-code: https://github.com/Xopoko/FreezeCut/releases/tag/v0.5.0-snap-store.3
 issues: https://github.com/Xopoko/FreezeCut/issues
 contact: https://github.com/Xopoko/FreezeCut/issues
 
@@ -32,6 +32,8 @@ apps:
     command-chain:
       - bin/gpu-2404-wrapper
       - bin/freezecut-launch
+    environment:
+      XKB_CONFIG_ROOT: $SNAP/usr/share/X11/xkb
     autostart: io.github.xopoko.Frameline.desktop
     plugs:
       - desktop
@@ -133,6 +135,8 @@ parts:
     after: [qt]
     plugin: nil
     source: .
+    stage-packages:
+      - xkb-data
     override-build: |
       version="$(sed -nE 's/^project\(FreezeCut VERSION ([0-9.]+)[[:space:]].*$/\1/p' "$CRAFT_PART_SRC/CMakeLists.txt")"
       test -n "$version"
@@ -142,7 +146,7 @@ parts:
         -DCMAKE_PREFIX_PATH="$CRAFT_STAGE/opt/qt6" \
         -DCMAKE_INSTALL_PREFIX=/usr \
         -DFREEZECUT_LINUX_SNAP=ON \
-        -DFREEZECUT_SNAP_BUILD_NUMBER=2
+        -DFREEZECUT_SNAP_BUILD_NUMBER=3
       cmake --build app-build --parallel 12
       ctest --test-dir app-build --output-on-failure
       DESTDIR="$CRAFT_PART_INSTALL" cmake --install app-build

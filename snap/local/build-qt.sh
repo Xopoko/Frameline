@@ -7,8 +7,21 @@ install_root=$3
 inputs="$build/qt-source"
 sdk="$install_root/opt/qt6"
 
-python3 "$project/scripts/release-qt.py" source "$inputs"
-mkdir "$build/qt-build"
+# Snapcraft can repeat this step while retaining the part's build directory.
+# Reverify the pinned inputs, then keep the original timestamps if they match.
+if [ -d "$inputs/source" ]; then
+    previous=$(mktemp -d "$inputs/previous.XXXXXX")
+    mv "$inputs/source" "$previous/source"
+    python3 "$project/scripts/release-qt.py" source "$inputs"
+    if diff -qr "$previous/source" "$inputs/source" >/dev/null; then
+        rm -r "$inputs/source"
+        mv "$previous/source" "$inputs/source"
+    fi
+    rm -r "$previous"
+else
+    python3 "$project/scripts/release-qt.py" source "$inputs"
+fi
+mkdir -p "$build/qt-build"
 cd "$build/qt-build"
 set -- -opensource -confirm-license -shared -release -nomake examples -nomake tests \
     -xcb -feature-wayland -dbus -opengl desktop -no-icu -no-openssl \

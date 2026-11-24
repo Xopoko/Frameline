@@ -528,7 +528,9 @@ void FreezeCutApplication::beginCapture(bool region, bool fromTrayMenu)
     region_ = region;
     portalAuthorizationAttempted_ = false;
 #ifdef FREEZECUT_LINUX_SNAP
-    interactivePortalCapture_ = false;
+    // GNOME's passive dialog requires a focused window with a matching desktop ID.
+    interactivePortalCapture_ = ScreenCapture::usesScreenshotPortal()
+        && qEnvironmentVariable("XDG_CURRENT_DESKTOP").split(u':').contains(QStringLiteral("GNOME"), Qt::CaseInsensitive);
 #endif
     restoreEditor_ = editor_ && editor_->isVisible();
     restoreLibrary_ = library_ && library_->isVisible() && !library_->isMinimized();
@@ -559,7 +561,11 @@ void FreezeCutApplication::beginCapture(bool region, bool fromTrayMenu)
 
 void FreezeCutApplication::captureAfterHiding(bool surfaceWasVisible)
 {
+#ifdef FREEZECUT_LINUX_SNAP
+    const auto capture = [this] { capture_.capture(region_, nullptr, interactivePortalCapture_); };
+#else
     const auto capture = [this] { capture_.capture(region_); };
+#endif
 #ifdef Q_OS_MACOS
     // ScreenCaptureKit filters out FreezeCut even while its windows are being hidden.
     Q_UNUSED(surfaceWasVisible);
