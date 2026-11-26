@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Xopoko/FreezeCut/releases/download/v0.5.1/FreezeCut-0.5.1-windows-x64.zip"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/badge-windows-light.svg"><img src="docs/media/badge-windows-dark.svg" height="56" alt="Download FreezeCut for Windows x64 (ZIP)"></picture></a>
+  <a href="https://apps.microsoft.com/detail/9mz173h585q8"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/badge-windows-light.svg"><img src="docs/media/badge-windows-dark.svg" height="56" alt="Install FreezeCut for Windows from the Microsoft Store"></picture></a>
   <a href="https://github.com/Xopoko/FreezeCut/releases/download/v0.5.1/FreezeCut-0.5.1-macOS-universal.dmg"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/badge-macos-light.svg"><img src="docs/media/badge-macos-dark.svg" height="56" alt="Download FreezeCut for macOS (universal DMG)"></picture></a>
   <a href="https://snapcraft.io/freezecut"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/media/badge-ubuntu-light.svg"><img src="docs/media/badge-ubuntu-dark.svg" height="56" alt="Install FreezeCut on Ubuntu from the Snap Store"></picture></a>
 </p>
@@ -58,7 +58,9 @@
 
 ## Install
 
-Download the package for your system from [Releases](https://github.com/Xopoko/FreezeCut/releases/latest). On Ubuntu you can also install FreezeCut from the [Snap Store](https://snapcraft.io/freezecut).
+Install FreezeCut from the [Microsoft Store](https://apps.microsoft.com/detail/9mz173h585q8) on Windows or the [Snap Store](https://snapcraft.io/freezecut) on Ubuntu.
+
+[GitHub Releases](https://github.com/Xopoko/FreezeCut/releases/latest) offers a Windows ZIP, macOS DMG and Ubuntu DEB. On Windows, use the ZIP to sync your Library across devices.
 
 Version 0.5.0 was released as Frameline. Its Windows launcher is `bin/FramelineGUI.exe`, its macOS app is `Frameline.app`, and its Ubuntu package is `frameline_0.5.0_amd64.deb`. Packages built from the current source use the following names.
 
